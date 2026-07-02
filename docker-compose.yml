@@ -1,0 +1,129 @@
+services:
+  # ---------------------------------------------------------------------
+  # MinIO: simula o S3 para armazenar os artifacts do MLflow (modelos,
+  # arquivos JSON de métricas etc). Compatível com a API do S3.
+  # ---------------------------------------------------------------------
+  minio:
+    image: minio/minio:latest
+    container_name: mlflow_minio
+    ports:
+      - "9000:9000"   # API S3
+      - "9001:9001"   # Console web (http://localhost:9001)
+    environment:
+      MINIO_ROOT_USER: ${AWS_ACCESS_KEY_ID:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${AWS_SECRET_ACCESS_KEY:-minioadmin123}
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------
+  # Cria automaticamente o bucket "mlflow" no MinIO assim que ele sobe.
+  # ---------------------------------------------------------------------
+  minio-init:
+    image: minio/mc:latest
+    container_name: mlflow_minio_init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 ${AWS_ACCESS_KEY_ID:-minioadmin} ${AWS_SECRET_ACCESS_KEY:-minioadmin123} &&
+      mc mb -p local/mlflow &&
+      echo 'Bucket mlflow criado com sucesso.'
+      "
+
+  # ---------------------------------------------------------------------
+  # Backend store do MLflow (metadados de runs, params, metrics).
+  # ---------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: mlflow_postgres
+    environment:
+      POSTGRES_USER: mlflow
+      POSTGRES_PASSWORD: mlflow
+      POSTGRES_DB: mlflow
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mlflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------
+  # Servidor MLflow: expõe a UI/API em http://localhost:5000
+  # Não precisa de GPU, roda normal em CPU.
+  # ---------------------------------------------------------------------
+  mlflow:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: mlflow
+    container_name: mlflow_server
+    ports:
+      - "5000:5000"
+    environment:
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-minioadmin}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-minioadmin123}
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      MLFLOW_S3_IGNORE_TLS: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    command: >
+      mlflow server
+      --backend-store-uri postgresql://mlflow:mlflow@postgres:5432/mlflow
+      --default-artifact-root s3://mlflow/
+      --host 0.0.0.0
+      --port 5000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ---------------------------------------------------------------------
+  # Aplicação de treinamento — roda com acesso à(s) GPU(s) NVIDIA do host.
+  #
+  # Pré-requisito no servidor: NVIDIA Container Toolkit instalado
+  #   (https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+  # Teste rápido para confirmar que o Docker enxerga a GPU:
+  #   docker run --rm --gpus all nvidia/cuda:12.6.0-base-ubuntu24.04 nvidia-smi
+  # ---------------------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: experiment_app
+    environment:
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-minioadmin}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-minioadmin123}
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      NVIDIA_VISIBLE_DEVICES: all
+      PYTHONUNBUFFERED: "1"
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+      - ./results:/app/results
+      - ./models:/app/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  minio_data:
+  postgres_data:
