@@ -61,6 +61,12 @@ class Experiment:
                     "max_complexity": results["Max_complexity"],
                 }
             )
+            mlflow.log_params(
+                {
+                    "epoch_min_loss": results["epoch_min_loss"],
+                    "epoch_max_complexity": results["epoch_max_complexity"],
+                }
+            )
 
             self._save_results(results)
             mlflow.log_artifact(self.config.output_file)
@@ -164,11 +170,16 @@ class Experiment:
         torch.save(model.state_dict(), checkpoint_path)
 
     def _summarize_results(self, history: dict[str, list[float]]) -> dict[str, float]:
-        """Reduce the per-epoch history into final best-value metrics."""
+        """Reduce the per-epoch history into final best-value metrics.
+
+        Epochs are 1-indexed to match the printed training log.
+        """
         return {
             "Max_accuracy": float(np.max(history["accuracy"])),
             "Min_loss": float(np.min(history["loss"])),
             "Max_complexity": float(np.max(history["complexity"])),
+            "epoch_min_loss": int(np.argmin(history["loss"])) + 1,
+            "epoch_max_complexity": int(np.argmax(history["complexity"])) + 1,
         }
 
     def _save_results(self, results: dict[str, float]) -> None:
