@@ -63,7 +63,7 @@ class Workflow:
         models_dir: str,
         metrics_dir: str,
         target_epochs: int | None = None,
-    ) -> Workflow:
+    ) -> 'Workflow':
         """Build a standard source → target transfer learning workflow.
 
         Creates four steps: pretraining on the source dataset, training the
@@ -120,7 +120,7 @@ class Workflow:
     @classmethod
     def create_medmnist_workflow(
         cls, models_dir: str = "models", metrics_dir: str = "results/metrics"
-    ) -> Workflow:
+    ) -> 'Workflow':
         """Create the TissueMNIST → BloodMNIST transfer learning workflow."""
         return cls._build_transfer_workflow(
             name="medmnist",
@@ -136,7 +136,7 @@ class Workflow:
     @classmethod
     def create_mnist_workflow(
         cls, models_dir: str = "models", metrics_dir: str = "results/metrics"
-    ) -> Workflow:
+    ) -> 'Workflow':
         """Create the MNIST → FashionMNIST transfer learning workflow."""
         return cls._build_transfer_workflow(
             name="mnist",
@@ -154,3 +154,4 @@ WORKFLOWS = {
     "medmnist": Workflow.create_medmnist_workflow,
     "mnist": Workflow.create_mnist_workflow,
 }
+

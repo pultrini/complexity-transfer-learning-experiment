@@ -115,8 +115,7 @@ class Experiment:
             train_metrics = trainer.train_epoch(
                 self.dataset_manager.train_loader,
                 criterion,
-                optimizer,
-                dataset_name=self.config.dataset_name,
+                optimizer
             )
             val_metrics = trainer.validate_epoch(self.dataset_manager.val_loader, criterion)
 
@@ -157,7 +156,9 @@ class Experiment:
 
     def _save_checkpoint(self, model: nn.Module, filename: str) -> None:
         """Save the model's state dict to the configured models directory."""
-        checkpoint_path = Path(self.config.models_dir) / filename
+        checkpoint_dir = Path(self.config.models_dir)
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        checkpoint_path = checkpoint_dir / filename
         torch.save(model.state_dict(), checkpoint_path)
 
     def _summarize_results(self, history: dict[str, list[float]]) -> dict[str, float]:
