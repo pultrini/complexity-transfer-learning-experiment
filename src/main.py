@@ -41,6 +41,18 @@ def main() -> None:
         default="results",
         help="Diretório onde os resultados finais agregados são salvos (default: 'results').",
     )
+    parser.add_argument(
+        "--architecture",
+        choices=["resnet50", "efficientnet_v2_s"],
+        default="resnet50",
+        help="Arquitetura do modelo a treinar (default: 'resnet50').",
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default=None,
+        help="Device a usar, ex: 'cuda:0', 'cuda:1', 'cpu'. Se omitido, escolhe cuda:0 automaticamente.",
+    )
     args = parser.parse_args()
 
     orchestrator = Orchestrator(
@@ -48,6 +60,8 @@ def main() -> None:
         models_dir=args.models_dir,
         metrics_dir=args.metrics_dir,
         results_dir=args.results_dir,
+        device=args.device,
+        model_architecture=args.architecture,
     )
 
     if args.workflow:

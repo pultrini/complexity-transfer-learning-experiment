@@ -1,43 +1,41 @@
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 import torch
 import torchvision
 from torch import nn
 
-CheckpointType = str  # 'loss' or 'complexity' — see CHECKPOINT_MAP
+CheckpointType = Literal["loss", "complexity"]
+ModelArchitecture = Literal["resnet50", "efficientnet_v2_s"]
 
 
 class ModelFactory:
-    """Creates and configures ResNet50 models adapted for MedMNIST/torchvision datasets."""
+    """Creates and configures models adapted for MedMNIST/torchvision datasets."""
 
     CHECKPOINT_MAP: ClassVar[dict[str, str]] = {
         "loss": "min_loss.pth",
         "complexity": "max_complexity.pth",
     }
 
-    def __init__(self, dataset_name: str, n_classes: int, models_dir: str = "models"):
+    def __init__(
+        self,
+        dataset_name: str,
+        n_classes: int,
+        models_dir: str = "models",
+        architecture: ModelArchitecture = "resnet50",
+    ):
         self.dataset_name = dataset_name
         self.n_classes = n_classes
         self.models_dir = Path(models_dir)
+        self.architecture = architecture
 
     def create(
         self,
         checkpoint_type: CheckpointType | None = None,
         checkpoint_path: str | None = None,
     ) -> nn.Module:
-        """Create an adapted ResNet50 model, optionally loading a checkpoint.
-
-        Args:
-            checkpoint_type: Load a checkpoint from ``models_dir`` selected by
-                type ('loss' or 'complexity'). Ignored if ``checkpoint_path``
-                is also given.
-            checkpoint_path: Explicit checkpoint path, used for transfer
-                learning. Takes precedence over ``checkpoint_type``.
-        """
-        model = torchvision.models.resnet50(weights=None)
-        model = self._adapt_conv1(model)
-        model = self._adapt_fc(model)
+        """Create an adapted model for the configured architecture."""
+        model = self._build_base_model()
 
         if checkpoint_path is not None:
             model = self._load_checkpoint_from_path(model, Path(checkpoint_path))
@@ -46,8 +44,24 @@ class ModelFactory:
 
         return model
 
-    def _adapt_conv1(self, model: nn.Module) -> nn.Module:
-        """Adapt the first convolution layer to accept 1 channel (grayscale)."""
+    def _build_base_model(self) -> nn.Module:
+        """Dispatch to the builder matching the configured architecture."""
+        builders = {
+            "resnet50": self._build_resnet50,
+            "efficientnet_v2_s": self._build_efficientnet_v2_s,
+        }
+        builder = builders.get(self.architecture)
+        if builder is None:
+            raise ValueError(
+                f"Unsupported architecture: {self.architecture!r}. "
+                f"Must be one of {list(builders.keys())}."
+            )
+        return builder()
+
+    def _build_resnet50(self) -> nn.Module:
+        """Build a ResNet50 adapted for 1-channel input and n_classes output."""
+        model = torchvision.models.resnet50(weights=None)
+
         original_conv = model.conv1
         model.conv1 = nn.Conv2d(
             in_channels=1,
@@ -57,12 +71,26 @@ class ModelFactory:
             padding=original_conv.padding,
             bias=False,
         )
+        model.fc = nn.Linear(in_features=model.fc.in_features, out_features=self.n_classes)
         return model
 
-    def _adapt_fc(self, model: nn.Module) -> nn.Module:
-        """Adapt the fully connected layer to the dataset's number of classes."""
-        original_num_features = model.fc.in_features
-        model.fc = nn.Linear(in_features=original_num_features, out_features=self.n_classes)
+    def _build_efficientnet_v2_s(self) -> nn.Module:
+        """Build an EfficientNetV2-S adapted for 1-channel input and n_classes output."""
+        model = torchvision.models.efficientnet_v2_s(weights=None)
+
+        # The first conv layer lives at features[0][0] (a Conv2dNormActivation block)
+        original_conv = model.features[0][0]
+        model.features[0][0] = nn.Conv2d(
+            in_channels=1,
+            out_channels=original_conv.out_channels,
+            kernel_size=original_conv.kernel_size,
+            stride=original_conv.stride,
+            padding=original_conv.padding,
+            bias=False,
+        )
+        # The classification head is classifier[1] (a Linear layer)
+        in_features = model.classifier[1].in_features
+        model.classifier[1] = nn.Linear(in_features=in_features, out_features=self.n_classes)
         return model
 
     def _load_checkpoint(self, model: nn.Module, checkpoint_type: CheckpointType) -> nn.Module:
@@ -82,13 +110,7 @@ class ModelFactory:
         return model
 
     def _load_checkpoint_from_path(self, model: nn.Module, checkpoint_path: Path) -> nn.Module:
-        """Load a checkpoint from an explicit path for transfer learning.
-
-        Uses ``strict=False`` to allow loading weights across datasets with a
-        different number of classes (e.g. TissueMNIST 8 classes → BloodMNIST
-        8 classes, or MNIST 10 classes → FashionMNIST 10 classes), since the
-        final fully connected layer may not match exactly.
-        """
+        """Load a checkpoint from an explicit path for transfer learning."""
         if not checkpoint_path.exists():
             print(f"Warning: checkpoint '{checkpoint_path}' not found. Using random weights.")
             return model

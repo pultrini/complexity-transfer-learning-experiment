@@ -28,6 +28,7 @@ class Experiment:
             dataset_name=config.dataset_name,
             n_classes=self.dataset_manager.n_classes,
             models_dir=config.models_dir,
+            architecture=config.model_architecture,   # ← novo
         )
 
     def run(self) -> dict[str, float]:
@@ -76,6 +77,7 @@ class Experiment:
                 "optimizer": "Adam",
                 "learning_rate": LEARNING_RATE,
                 "strategy": self.config.strategy,
+                "architecture": self.config.model_architecture,
             }
         )
         if self.config.workflow_name:

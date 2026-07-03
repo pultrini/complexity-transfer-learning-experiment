@@ -94,12 +94,14 @@ class Orchestrator:
         results_dir: str = "results",
         device: str | None = None,
         models_dir: str = "models",
+        model_architecture: str = "resnet50",
     ):
         self.max_iterations = max_iterations
         self.base_seed = base_seed
         self.metrics_dir = metrics_dir
         self.results_dir = results_dir
         self.models_dir = models_dir
+        self.model_architecture = model_architecture
         self.device = device or ("cuda:0" if torch.cuda.is_available() else "cpu")
         self.model_names = [spec.name for spec in self.MODEL_CONFIGS]
 
@@ -118,6 +120,7 @@ class Orchestrator:
                 strategy=spec.strategy,
                 checkpoint_type=spec.checkpoint_type,
                 models_dir=self.models_dir,
+                model_architecture=self.model_architecture,
             )
 
         all_metrics = self._run_iterations(
@@ -145,6 +148,7 @@ class Orchestrator:
                 strategy=step.strategy,
                 checkpoint_path=step.checkpoint_path,
                 models_dir=self.models_dir,
+                model_architecture=self.model_architecture,   # ← novo
                 mlflow_experiment_name=workflow.mlflow_experiment_name,
                 mlflow_run_name=f"{step.mlflow_run_name}_iter{iteration}",
                 workflow_name=workflow.name,
