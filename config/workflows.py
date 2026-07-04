@@ -143,7 +143,7 @@ class Workflow:
             mlflow_experiment_name="mnist_transfer",
             source="MNIST",
             target="FashionMNIST",
-            source_epochs=10,
+            source_epochs=50,
             metrics_prefix="mnist",
             models_dir=models_dir,
             metrics_dir=metrics_dir,
