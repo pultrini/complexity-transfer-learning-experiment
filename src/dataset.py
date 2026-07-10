@@ -4,10 +4,10 @@ from typing import ClassVar, Literal
 import torch
 import torchvision
 from medmnist import BloodMNIST, TissueMNIST
+from PIL import Image, UnidentifiedImageError
 from torch.utils.data import DataLoader, Dataset, random_split
 from torchvision.datasets import MNIST, FashionMNIST
 from torchvision.transforms import v2
-from PIL import Image, UnidentifiedImageError
 
 from config.dataset_registry import DATASET_REGISTRY
 
@@ -23,16 +23,16 @@ IMAGE_SIZE = (224, 224)
 class _TinyImageNetDataset(Dataset):
     """
     Reads the native Tiny ImageNet layout, without reorganizing files.
-    
+
     Train images live at ``train/<wnid>/images/*.JPEG``. The labeled
     validation split lives at ``val/images/*.JPEG`` with labels given in
     ``val/val_annotations.txt`` (tab-separated: filename, wnid, ...).
     """
-    
+
     def __init__(self, root: Path, split: Literal["train", "val"], transform=None) ->None:
         self.transform = transform
         self.samples: list[tuple[Path, int]] = []
-        
+
         wnids = sorted(p.name for p in (root / "train").iterdir() if p.is_dir())
         self.class_to_idx = {wnid: i for i, wnid in enumerate(wnids)}
 
@@ -182,7 +182,7 @@ class DatasetManager:
             self._make_loader(val_dataset, self.batch_size_eval),
             self._make_loader(test_dataset, self.batch_size_eval),
         )
-    
+
     def _build_imagefolder_datasets(self) -> tuple[DataLoader, DataLoader, DataLoader]:
         if self.dataset_name == "TinyImageNet":
             return self._build_tinyimagenet_datasets()
@@ -214,7 +214,7 @@ class DatasetManager:
             self._make_loader(val_dataset, self.batch_size_eval),
             self._make_loader(test_dataset, self.batch_size_eval),
         )
-    
+
     def _build_catsvsdogs_datasets(self) -> tuple[DataLoader, DataLoader, DataLoader]:
         """Cats vs Dogs: expects data_root/CatsVsDogs/train/{cat,dog}/*.jpg
         (see scripts/reorganize_catsvsdogs.py). No native val/test split, so
@@ -244,7 +244,7 @@ class DatasetManager:
     @staticmethod
     def _safe_pil_loader(path: str) -> Image.Image:
         return Image.open(path).convert("RGB")
-    
+
     def _filter_corrupt_samples(
         self, dataset: torchvision.datasets.ImageFolder
     ) -> torchvision.datasets.ImageFolder:
@@ -270,7 +270,7 @@ class DatasetManager:
         dataset.targets = [label for _, label in valid_samples]
         return dataset
 
-    
+
     @property
     def train_loader(self) -> DataLoader:
         self._ensure_dataloaders()
