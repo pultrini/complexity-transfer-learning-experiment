@@ -110,15 +110,31 @@ class ModelFactory:
         return model
 
     def _load_checkpoint_from_path(self, model: nn.Module, checkpoint_path: Path) -> nn.Module:
-        """Load a checkpoint from an explicit path for transfer learning."""
+        """Load a checkpoint from an explicit path for transfer learning.
+
+        Keys whose shape doesn't match the current model (e.g. the final
+        classifier layer, when source and target datasets have a different
+        number of classes) are skipped so the rest of the pretrained weights
+        still load correctly.
+        """
         if not checkpoint_path.exists():
             print(f"Warning: checkpoint '{checkpoint_path}' not found. Using random weights.")
             return model
 
         print(f"Loading checkpoint for transfer learning: {checkpoint_path}")
         state_dict = torch.load(checkpoint_path, weights_only=True)
-        incompatible = model.load_state_dict(state_dict, strict=False)
+        model_state = model.state_dict()
 
+        compatible_state = {
+            k: v for k, v in state_dict.items()
+            if k in model_state and v.shape == model_state[k].shape
+        }
+        skipped = sorted(set(state_dict) - set(compatible_state))
+
+        incompatible = model.load_state_dict(compatible_state, strict=False)
+
+        if skipped:
+            print(f"  Skipped due to shape mismatch (e.g. classifier head): {skipped}")
         if incompatible.missing_keys:
             print(f"  Layers missing from checkpoint (randomly initialized): {incompatible.missing_keys}")
         if incompatible.unexpected_keys:

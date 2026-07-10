@@ -35,4 +35,16 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
         has_val_split=True,
         native_channels=1
     ),
+    'TinyImageNet': DatasetInfo(
+        source='imagefolder',
+        n_classes=200,
+        has_val_split=True,
+        native_channels=3
+    ),
+    'CatsVsDogs': DatasetInfo(
+        source='imagefolder',
+        n_classes=2,
+        has_val_split=False,
+        native_channels=3
+    ),
 }

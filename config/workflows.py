@@ -1,3 +1,4 @@
+from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import ClassVar, Literal
 
@@ -148,10 +149,27 @@ class Workflow:
             models_dir=models_dir,
             metrics_dir=metrics_dir,
         )
+    
+    @classmethod
+    def create_tinyimagenet_catsdogs_workflow(
+        cls, models_dir: str = "models", metrics_dir: str = "results/metrics"
+    ) -> 'Workflow':
+        """Create the TinyImageNet -> CatsVsDogs transfer learning workflow."""
+        return cls._build_transfer_workflow(
+            name="tinyimagenet_catsdogs",
+            mlflow_experiment_name="tinyimagenet_catsdogs_transfer",
+            source="TinyImageNet",
+            target="CatsVsDogs",
+            source_epochs=50,
+            metrics_prefix="tinyimagenet_catsdogs",
+            models_dir=models_dir,
+            metrics_dir=metrics_dir,
+        )
 
 
 WORKFLOWS = {
     "medmnist": Workflow.create_medmnist_workflow,
     "mnist": Workflow.create_mnist_workflow,
+    "tinyimagenet_catsdogs": Workflow.create_tinyimagenet_catsdogs_workflow
 }
 
