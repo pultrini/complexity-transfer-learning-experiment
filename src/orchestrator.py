@@ -1,3 +1,4 @@
+import gc
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -148,7 +149,7 @@ class Orchestrator:
                 strategy=step.strategy,
                 checkpoint_path=step.checkpoint_path,
                 models_dir=self.models_dir,
-                model_architecture=self.model_architecture,   # ← novo
+                model_architecture=self.model_architecture,
                 mlflow_experiment_name=workflow.mlflow_experiment_name,
                 mlflow_run_name=f"{step.mlflow_run_name}_iter{iteration}",
                 workflow_name=workflow.name,
@@ -175,6 +176,12 @@ class Orchestrator:
         Shared by both the standard model loop (``run``) and transfer learning
         workflows (``run_workflow``) — the only difference between them is how
         each step is turned into an ``ExperimentConfig``.
+
+        GPU memory is explicitly released after every single experiment run
+        (not just after each iteration) to prevent memory from accumulating
+        across iterations within this long-lived process, which can otherwise
+        lead to a CUDA out-of-memory error partway through a multi-iteration
+        run even though each individual experiment fits comfortably on its own.
         """
         all_metrics: dict[str, dict[str, dict | None]] = {}
 
@@ -184,6 +191,7 @@ class Orchestrator:
             for step in steps:
                 config = build_config(step, iteration)
                 Experiment(config).run()
+                self._release_gpu_memory()
 
             metrics_per_step = {step.name: self._read_metrics(step.output_file) for step in steps}
 
@@ -195,6 +203,23 @@ class Orchestrator:
                 print("Some metrics were not found for this iteration. Skipping aggregation.")
 
         return all_metrics
+
+    def _release_gpu_memory(self) -> None:
+        """Force Python garbage collection and release cached CUDA memory.
+
+        Called after every experiment run. Model instances, optimizers, and
+        intermediate tensors created inside ``Experiment.run()`` go out of
+        scope once the call returns, but Python's garbage collector does not
+        guarantee immediate collection (e.g. in the presence of reference
+        cycles), and PyTorch's CUDA caching allocator does not return freed
+        memory to the driver on its own. Without this, GPU memory usage can
+        creep up run after run until it eventually raises
+        ``torch.OutOfMemoryError``, even though no single run needs that much
+        memory on its own.
+        """
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     def _save_aggregated_metrics(self, all_metrics: dict, aggregated_path: Path) -> None:
         """Persist the aggregated metrics dict to disk as JSON."""

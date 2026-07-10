@@ -35,12 +35,14 @@ class DatasetManager:
         self,
         dataset_name: str,
         data_root: str = "data",
-        batch_size_train: int = 256,
-        batch_size_eval: int = 128,
+        batch_size_train: int = 128,
+        batch_size_eval: int = 64,
     ):
         if dataset_name not in DATASET_REGISTRY:
             valid = list(DATASET_REGISTRY.keys())
-            raise ValueError(f"Unsupported dataset: {dataset_name!r}. Must be one of {valid}.")
+            raise ValueError(
+                f"Unsupported dataset: {dataset_name!r}. Must be one of {valid}."
+            )
 
         self.dataset_name = dataset_name
         self.data_root = data_root
@@ -68,7 +70,9 @@ class DatasetManager:
 
     def _make_loader(self, dataset: Dataset, batch_size: int) -> DataLoader:
         """Wrap a dataset in a DataLoader with the manager's standard settings."""
-        return DataLoader(dataset=dataset, batch_size=batch_size, shuffle=True, drop_last=True)
+        return DataLoader(
+            dataset=dataset, batch_size=batch_size, shuffle=True, drop_last=True
+        )
 
     def _ensure_dataloaders(self) -> None:
         """Lazily create the train/val/test DataLoaders on first access."""
