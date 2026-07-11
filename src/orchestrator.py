@@ -10,6 +10,7 @@ import torch
 from config.experiment_config import ExperimentConfig
 from config.workflows import Workflow, WorkflowStep
 from src.experiment import Experiment
+from utils.ploting import generate_workflow_plots
 from utils.statistics import StatisticsCalculator
 
 
@@ -163,6 +164,25 @@ class Orchestrator:
         print(f"\n==== Workflow {workflow.name} finished. Computing final statistics... ====")
         step_names = [step.name for step in workflow.steps]
         self._save_final_statistics(all_metrics, prefix=workflow.name, model_names=step_names)
+
+        self._generate_plots(workflow)
+
+    def _generate_plots(self, workflow: Workflow) -> None:
+        """Generate/update IEEE-style plots directly from MLflow after this
+        workflow finishes. Multi-model comparison plots are skipped
+        gracefully until every architecture has data (see ieee_plotting.py).
+        """
+        try:
+            generate_workflow_plots(
+                workflow_name=workflow.name,
+                mlflow_experiment_name=workflow.mlflow_experiment_name,
+                architecture=self.model_architecture,
+                source_dataset_label=workflow.source_dataset,
+                target_dataset_label=workflow.target_dataset,
+                output_dir=f"{self.results_dir}/plots",
+            )
+        except Exception as exc:  # noqa: BLE001 -- plotting must never fail the run
+            print(f"[warning] Plot generation failed, continuing anyway: {exc}")
 
     def _run_iterations(
         self,
