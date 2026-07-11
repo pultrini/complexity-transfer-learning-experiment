@@ -34,7 +34,7 @@ class LMWorkflow:
         cls,
         models_dir: str = "models",
         metrics_dir: str = "results/metrics",
-        source_epochs: int = 10,
+        source_epochs: int = 50,
         target_epochs: int = 10,
     ) -> "LMWorkflow":
         """Create the WikiText-2 -> Tiny-Shakespeare transfer learning workflow.

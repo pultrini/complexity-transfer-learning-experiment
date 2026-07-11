@@ -1,10 +1,11 @@
 import csv
+import sys
 
 import torch
-import torch.nn as nn
+from torch import nn
 from torch.utils.data import Dataset
 
-
+csv.field_size_limit(sys.maxsize)
 class TextDataset(Dataset):
     """Tokenizes a text or CSV file into fixed-length next-token-prediction windows."""
 

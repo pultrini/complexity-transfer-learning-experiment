@@ -1,6 +1,8 @@
 import argparse
 
+from config.lm_workflow import LM_WORKFLOWS
 from config.workflows import WORKFLOWS
+from src.lm_orchestrator import LMOrchestrator
 
 
 def build_vision_parser(subparsers) -> None:
@@ -19,8 +21,6 @@ def build_vision_parser(subparsers) -> None:
 
 
 def build_language_parser(subparsers) -> None:
-    from config.lm_workflows import LM_WORKFLOWS
-
     parser = subparsers.add_parser(
         "language", help="Run language model transfer learning experiments."
     )
@@ -67,8 +67,6 @@ def run_vision(args: argparse.Namespace) -> None:
 
 
 def run_language(args: argparse.Namespace) -> None:
-    from config.lm_workflows import LM_WORKFLOWS
-    from src.lm_orchestrator import LMOrchestrator
 
     orchestrator = LMOrchestrator(
         max_iterations=args.iterations,

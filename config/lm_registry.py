@@ -21,7 +21,7 @@ LM_DATASET_REGISTRY: dict[str, LMDatasetInfo] = {
     ),
     "tiny_shakespeare": LMDatasetInfo(
         train_file="tiny-shakespare/train.csv",
-        val_file="tiny-shakespare/val.csv",
+        val_file="tiny-shakespare/validation.csv",
         test_file="tiny-shakespare/test.csv",
     ),
 }

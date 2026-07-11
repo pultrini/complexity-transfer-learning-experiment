@@ -72,7 +72,7 @@ class LMDatasetManager:
             val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=4, pin_memory=True
         )
         self._test_loader = DataLoader(
-            test_dataset, batch_size=self.batch_size, shuffle=False, num_workers=4, pin_memory=True
+            test_dataset, batch_size=self.batch_size, shuffle=False, num_workers=4 , pin_memory=True
         )
 
     @property
