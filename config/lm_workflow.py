@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -38,7 +36,7 @@ class LMWorkflow:
         metrics_dir: str = "results/metrics",
         source_epochs: int = 10,
         target_epochs: int = 10,
-    ) -> LMWorkflow:
+    ) -> "LMWorkflow":
         """Create the WikiText-2 -> Tiny-Shakespeare transfer learning workflow.
 
         Requires 'tiny_shakespeare' to have train/val files configured in

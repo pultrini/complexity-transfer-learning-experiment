@@ -5,11 +5,11 @@ from pathlib import Path
 import mlflow
 import numpy as np
 import torch
-from torch import nn
+import torch.nn as nn
 
 from config.lm_experiment_config import LMExperimentConfig
 from src.lm_dataset import LMDatasetManager
-from src.lm_factory import LanguageModelFactory
+from src.lm_model_factory import LanguageModelFactory
 from src.lm_trainer import LMTrainer
 
 

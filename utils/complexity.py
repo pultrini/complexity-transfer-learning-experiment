@@ -19,15 +19,33 @@ class LMCComplexity:
     """
 
     def __init__(self, max_bin_sample_size: int = 10_000):
+        """
+        Args:
+            max_bin_sample_size: Maximum number of weights sampled to estimate
+                the IQR used for bin-width selection. Sampling (rather than
+                using the full weight vector) keeps this step fast for very
+                large models, at negligible cost to bin-width accuracy.
+        """
         self.max_bin_sample_size = max_bin_sample_size
 
+    def compute(self, weights: torch.Tensor) -> tuple[float, float, float]:
+        """Compute the full LMC complexity measure for a weight vector.
 
-    def compute(self, weights: torch.Tensor):
+        Args:
+            weights: A 1-D tensor of model weights (e.g. from
+                ``torch.nn.utils.parameters_to_vector``). Any device/dtype is
+                accepted; computation stays on the input tensor's device.
+
+        Returns:
+            A tuple ``(entropy, disequilibrium, complexity)``, where
+            ``complexity = entropy * disequilibrium``.
+        """
         probabilities = self._compute_probabilities(weights)
-        entropy = self.shannon_entropy(probabilities)
-        disequilibrium_value = self.disequilibrium(probabilities)
-        complexity = entropy * disequilibrium_value
-        return entropy, disequilibrium_value, complexity
+        entropy = self._shannon_entropy(probabilities)
+        disequilibrium = self._disequilibrium(probabilities)
+        complexity = entropy * disequilibrium
+        return entropy, disequilibrium, complexity
+
     def _compute_probabilities(self, weights: torch.Tensor) -> torch.Tensor:
         """Build a probability distribution over adaptively-sized bins.
 
@@ -70,7 +88,6 @@ class LMCComplexity:
         probabilities = torch.clamp(probabilities, eps, 1.0)
         return probabilities / probabilities.sum()
 
-
     def _select_num_bins(self, normalized_weights: torch.Tensor) -> int:
         """Select the bin count via the Freedman-Diaconis rule.
 
@@ -97,33 +114,12 @@ class LMCComplexity:
         bin_width = 2 * iqr * (n ** (-1 / 3))
         return max(1, int(np.ceil(1.0 / bin_width)))
 
-
-    def normalize(self, data: np.ndarray) -> np.ndarray:
-        """Normalize data to the [0, 1] range."""
-        min_val = np.min(data)
-        max_val = np.max(data)
-        if max_val - min_val == 0:
-            return np.zeros_like(data)
-        return (data - min_val) / (max_val - min_val)
-
-    def calculate_probabilities(self, data: np.ndarray) -> np.ndarray:
-        """Compute the probability distribution of the data over ``num_bins`` bins.
-
-        Only bins with nonzero counts are returned.
-        """
-        counts, _ = np.histogram(data, bins=self.num_bins, density=False)
-        total = np.sum(counts)
-        if total == 0:
-            return np.zeros(self.num_bins)
-        probabilities = counts / total
-        return probabilities[probabilities > 0]
-
-    def shannon_entropy(self, probabilities: torch.Tensor) -> float:
+    def _shannon_entropy(self, probabilities: torch.Tensor) -> float:
         """Compute the Shannon entropy of a probability distribution."""
         return -(probabilities * torch.log(probabilities)).sum().item()
 
-    def disequilibrium(self, probabilities: torch.Tensor) -> float:
-        """Compute the disequilibrium (distance from the uniform distribution)."""
+    def _disequilibrium(self, probabilities: torch.Tensor) -> float:
+        """Compute the disequilibrium (squared distance from uniform)."""
         num_bins = probabilities.numel()
         uniform_prob = 1.0 / num_bins
         return ((probabilities - uniform_prob) ** 2).sum().item()

@@ -1,24 +1,23 @@
 import csv
 
 import torch
-from torch import nn
+import torch.nn as nn
 from torch.utils.data import Dataset
 
 
 class TextDataset(Dataset):
-    """Tokenizes a text or CSV file into fixed-length next-token-prediction windows"""
+    """Tokenizes a text or CSV file into fixed-length next-token-prediction windows."""
 
     def __init__(self, file_path: str, tokenizer, seq_length: int, max_samples: int | None = None):
         self.seq_length = seq_length
         self.tokenizer = tokenizer
 
-        with open(file_path, encoding="utf-8", errors = "ignore") as f:
+        with open(file_path, encoding="utf-8", errors="ignore") as f:
             if file_path.endswith(".csv"):
                 reader = csv.DictReader(f)
-                text = " ".join(row["text"] for row in reader)
+                text = "".join(row["text"] for row in reader)
             else:
                 text = f.read()
-
 
         encodings = tokenizer(
             text,
@@ -44,8 +43,9 @@ class TextDataset(Dataset):
         target_ids = self.input_ids[idx + 1 : idx + self.seq_length + 1]
         return {"input_ids": input_ids, "labels": target_ids}
 
+
 class TransformerLLM(nn.Module):
-    """A small casual Transformer language model.
+    """A small causal Transformer language model.
 
     Architecturally a decoder-only stack (via ``nn.TransformerEncoder`` with a
     causal mask, following the same "encoder-as-decoder" pattern used by many
@@ -71,11 +71,10 @@ class TransformerLLM(nn.Module):
             d_model=hidden_dim,
             nhead=num_attention_heads,
             dim_feedforward=hidden_dim * 4,
+            batch_first=True,
             dropout=dropout,
             activation="gelu",
-            batch_first=True,
         )
-
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
         self.lm_head = nn.Linear(hidden_dim, vocab_size)
 
@@ -89,10 +88,9 @@ class TransformerLLM(nn.Module):
 
         embeddings = self.embedding(input_ids) + self.position_embedding(positions)
 
-        casual_mask = torch.triu(
-            torch.ones(seq_length, seq_length, device=input_ids.device),
-            diagonal=1,
+        causal_mask = torch.triu(
+            torch.ones(seq_length, seq_length, device=input_ids.device), diagonal=1
         ).bool()
 
-        transformer_output = self.transformer(embeddings, mask=casual_mask)
-        return self.lm_head(transformer_output)
+        transformer_out = self.transformer(embeddings, mask=causal_mask)
+        return self.lm_head(transformer_out)

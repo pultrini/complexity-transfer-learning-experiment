@@ -1,7 +1,7 @@
 from typing import TypedDict
 
 import torch
-from torch import nn
+import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from utils.complexity import LMCComplexity
