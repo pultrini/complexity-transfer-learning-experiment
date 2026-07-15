@@ -171,6 +171,5 @@ class Workflow:
 WORKFLOWS = {
     "medmnist": Workflow.create_medmnist_workflow,
     "mnist": Workflow.create_mnist_workflow,
-    "tinyimagenet_catsdogs": Workflow.create_tinyimagenet_catsdogs_workflow
+    "tinyimagenet_catsdogs": Workflow.create_tinyimagenet_catsdogs_workflow,
 }
-

@@ -28,7 +28,7 @@ class LMCComplexity:
         """
         self.max_bin_sample_size = max_bin_sample_size
 
-    def compute(self, weights: torch.Tensor) -> tuple[float, float, float]:
+    def compute(self, weights: torch.Tensor | np.ndarray) -> tuple[float, float, float]:
         """Compute the full LMC complexity measure for a weight vector.
 
         Args:
@@ -40,6 +40,8 @@ class LMCComplexity:
             A tuple ``(entropy, disequilibrium, complexity)``, where
             ``complexity = entropy * disequilibrium``.
         """
+        weights = torch.as_tensor(weights)
+
         probabilities = self._compute_probabilities(weights)
         entropy = self._shannon_entropy(probabilities)
         disequilibrium = self._disequilibrium(probabilities)
@@ -66,7 +68,7 @@ class LMCComplexity:
         normalized = (weights - weights_min) / (data_range + 1e-10)
         num_bins = self._select_num_bins(normalized)
 
-        bin_edges = torch.linspace(0.0, 1.0, num_bins + 1, device=weights.device)
+        bin_edges = torch.linspace(0.0, 1.0, num_bins + 1, dtype=torch.float32, device=weights.device)
         bin_width = bin_edges[1] - bin_edges[0]
 
         bin_pos = normalized / bin_width
@@ -78,7 +80,7 @@ class LMCComplexity:
         weight_left = 1.0 - frac
         weight_right = frac
 
-        hist = torch.zeros(num_bins, device=weights.device, dtype=weights.dtype)
+        hist = torch.zeros(num_bins, device=weights.device, dtype=torch.float32)
         hist.scatter_add_(0, bin_left, weight_left)
         hist.scatter_add_(0, bin_right, weight_right)
 
@@ -104,8 +106,8 @@ class LMCComplexity:
         else:
             sample = normalized_weights
 
-        q1 = torch.quantile(sample, 0.25)
-        q3 = torch.quantile(sample, 0.75)
+        q1 = torch.quantile(sample.float(), 0.25)
+        q3 = torch.quantile(sample.float(), 0.75)
         iqr = (q3 - q1).item()
 
         if iqr == 0:

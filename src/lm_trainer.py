@@ -9,6 +9,7 @@ from utils.complexity import LMCComplexity
 
 class LMEpochMetrics(TypedDict, total=False):
     loss: float
+    accuracy: float
     entropy: float
     disequilibrium: float
     complexity: float
@@ -39,7 +40,7 @@ class LMTrainer:
     ) -> LMEpochMetrics:
         """Train for one epoch and return loss and LMC complexity metrics."""
         self.model.train()
-        total_loss, total_batches = self._run_epoch(
+        total_loss, total_batches, total_correct, total_tokens = self._run_epoch(
             dataloader, criterion, vocab_size, optimizer=optimizer, max_grad_norm=max_grad_norm, train=True
         )
 
@@ -48,6 +49,7 @@ class LMTrainer:
 
         return {
             "loss": total_loss / total_batches,
+            "accuracy" : total_correct / total_tokens if total_tokens > 0 else 0.0,
             "entropy": entropy,
             "disequilibrium": disequilibrium,
             "complexity": complexity,
@@ -58,10 +60,13 @@ class LMTrainer:
     ) -> LMEpochMetrics:
         """Validate for one epoch and return the average loss."""
         self.model.eval()
-        total_loss, total_batches = self._run_epoch(
+        total_loss, total_batches, total_correct, total_tokens = self._run_epoch(
             dataloader, criterion, vocab_size, optimizer=None, max_grad_norm=None, train=False
         )
-        return {"loss": total_loss / total_batches}
+        return {
+                "loss": total_loss / total_batches,
+                "accuracy": total_correct / total_tokens if total_tokens > 0 else 0.0,
+                }
 
     def _run_epoch(
         self,
@@ -71,7 +76,7 @@ class LMTrainer:
         optimizer: torch.optim.Optimizer | None,
         max_grad_norm: float | None,
         train: bool,
-    ) -> tuple[float, int]:
+    ) -> tuple[float, int, int, int]:
         """Run a single pass over the dataloader, optionally updating weights.
 
         Returns:
@@ -80,6 +85,8 @@ class LMTrainer:
         """
         total_loss = 0.0
         total_batches = 0
+        total_correct = 0
+        total_tokens = 0
 
         context = torch.enable_grad() if train else torch.no_grad()
         with context:
@@ -91,7 +98,18 @@ class LMTrainer:
                     optimizer.zero_grad(set_to_none=True)
 
                 logits = self.model(input_ids)
+
+                logits_flat = logits.view(-1, vocab_size)
+                labels_flat = labels.view(-1)
+
                 loss = criterion(logits.view(-1, vocab_size), labels.view(-1))
+
+                preds = torch.argmax(logits_flat, dim=1)
+                ignore_index = getattr(criterion, "ignore_index", -100)
+                mask = labels_flat != ignore_index
+
+                total_correct += (preds[mask] == labels_flat[mask]).sum().item()
+                total_tokens += mask.sum().item()
 
                 if train:
                     loss.backward()
@@ -102,4 +120,4 @@ class LMTrainer:
                 total_loss += loss.detach().item()
                 total_batches += 1
 
-        return total_loss, total_batches
+        return total_loss, total_batches, total_correct, total_tokens

@@ -2,12 +2,12 @@
 
 set -uo pipefail
 
-cd /code
+#cd /code
 
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 ITERATIONS=5
-DEVICE="cuda:0"
+DEVICE="cuda:1"
 
 FAILURES_LOG="failures.log"
 PROGRESS_LOG="progress.log"
@@ -27,14 +27,6 @@ ARCHITECTURES=("resnet50" "efficientnet_v2_s")
 
 for WORKFLOW in "${VISION_WORKFLOWS[@]}"; do
     for ARCH in "${ARCHITECTURES[@]}"; do
-
-        # Pula a combinacao medmnist + resnet50 (ja concluida anteriormente)
-        if [[ "${WORKFLOW}" == "medmnist" && "${ARCH}" == "resnet50" ]]; then
-            echo "Pulando ${WORKFLOW} + ${ARCH} (combinacao ja concluida)"
-            log_progress "PULADO: vision ${WORKFLOW} + ${ARCH}"
-            echo ""
-            continue
-        fi
 
         MODELS_DIR="models/${WORKFLOW}/${ARCH}"
         RESULTS_DIR="results/${WORKFLOW}/${ARCH}"
