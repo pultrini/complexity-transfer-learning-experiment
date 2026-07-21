@@ -11,6 +11,7 @@ from config.lm_experiment_config import LMExperimentConfig
 from src.lm_dataset import LMDatasetManager
 from src.lm_model_factory import LanguageModelFactory
 from src.lm_trainer import LMTrainer
+from utils.optmizers import build_optmizer
 
 
 class LMExperiment:
@@ -56,7 +57,11 @@ class LMExperiment:
                 checkpoint_type=self.config.checkpoint_type,
                 checkpoint_path=self.config.checkpoint_path,
             )
-            optimizer = torch.optim.AdamW(model.parameters(), lr=self.config.learning_rate)
+            optimizer = build_optmizer(
+                name=self.config.optimizer_name,
+                parameters=model.parameters(),
+                learning_rate=self.config.learning_rate,
+            )
             criterion = nn.CrossEntropyLoss()
             trainer = LMTrainer(model, self.config.device)
 
@@ -76,7 +81,6 @@ class LMExperiment:
                 {
                     "min_loss": results["Min_loss"],
                     "max_complexity": results["Max_complexity"],
-                    "max_val_accuracy": results["Max_val_accuracy"],
                 }
             )
 
@@ -92,7 +96,7 @@ class LMExperiment:
             {
                 "dataset": self.config.dataset_name,
                 "num_epochs": self.config.num_epochs,
-                "optimizer": "AdamW",
+                "optimizer": self.config.optimizer_name,
                 "learning_rate": self.config.learning_rate,
                 "strategy": self.config.strategy,
                 "architecture": "transformer_lm",
@@ -128,7 +132,7 @@ class LMExperiment:
         scheduler: torch.optim.lr_scheduler.LRScheduler,
     ) -> dict[str, list[float]]:
         """Run the full training loop, logging metrics and saving checkpoints."""
-        history: dict[str, list[float]] = {"loss": [], "complexity": [], "val_accuracy": []}
+        history: dict[str, list[float]] = {"loss": [], "complexity": []}
         best_loss = math.inf
         best_complexity = -math.inf
         checkpoint_prefix = self.config.dataset_name
@@ -148,19 +152,17 @@ class LMExperiment:
             scheduler.step()
 
             val_loss = val_metrics["loss"]
-            val_accuracy = val_metrics["accuracy"]
             complexity = train_metrics["complexity"]
 
             print(
                 f"Epoch {epoch}/{self.config.num_epochs} -> "
-                f"Val Loss: {val_loss:.4f} | val_accuracy: {val_accuracy:.4f} | Complexity: {complexity:.4f}"
+                f"Val Loss: {val_loss:.4f} | Complexity: {complexity:.4f}"
             )
 
             history["loss"].append(val_loss)
             history["complexity"].append(complexity)
-            history["val_accuracy"].append(val_accuracy)
 
-            self._log_epoch_metrics(epoch, val_metrics, train_metrics)
+            self._log_epoch_metrics(epoch, val_loss, train_metrics)
 
             if val_loss < best_loss:
                 self._save_checkpoint(trainer.model, f"{checkpoint_prefix}_min_loss.pth")
@@ -172,12 +174,10 @@ class LMExperiment:
 
         return history
 
-    def _log_epoch_metrics(self, epoch: int, val_metrics: dict, train_metrics: dict) -> None:
+    def _log_epoch_metrics(self, epoch: int, val_loss: float, train_metrics: dict) -> None:
         """Log a single epoch's metrics to MLflow."""
-        mlflow.log_metric("val_loss", float(val_metrics["loss"]), step=epoch)
-        mlflow.log_metric("val_accuracy", float(val_metrics["accuracy"]), step=epoch)
+        mlflow.log_metric("val_loss", float(val_loss), step=epoch)
         mlflow.log_metric("train_loss", float(train_metrics["loss"]), step=epoch)
-        mlflow.log_metric("train_accuracy", float(train_metrics["accuracy"]), step=epoch)
         mlflow.log_metric("complexity", float(train_metrics["complexity"]), step=epoch)
         mlflow.log_metric("disequilibrium", float(train_metrics["disequilibrium"]), step=epoch)
         mlflow.log_metric("entropy", float(train_metrics["entropy"]), step=epoch)
@@ -193,7 +193,6 @@ class LMExperiment:
         return {
             "Min_loss": float(np.min(history["loss"])),
             "Max_complexity": float(np.max(history["complexity"])),
-            "Max_val_accuracy": float(np.max(history["val_accuracy"])),
         }
 
     def _save_results(self, results: dict[str, float]) -> None:

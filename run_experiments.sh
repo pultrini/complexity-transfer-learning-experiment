@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-
 set -uo pipefail
-
-#cd /code
+cd "$(dirname "${BASH_SOURCE[0]}")"
 
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 ITERATIONS=5
 DEVICE="cuda:1"
+
+# Ajuste aqui o otimizador e o learning rate para esta rodada.
+OPTIMIZER="adamw"        # "adam" | "adamw" | "sgd"
+LEARNING_RATE="0.0005"
 
 FAILURES_LOG="failures.log"
 PROGRESS_LOG="progress.log"
@@ -22,60 +24,70 @@ log_failure() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - FALHOU: $1" >> "${FAILURES_LOG}"
 }
 
-VISION_WORKFLOWS=("medmnist" "mnist")
+VISION_WORKFLOWS=("medmnist" "mnist" "tinyimagenet_catsdogs")
 ARCHITECTURES=("resnet50" "efficientnet_v2_s")
 
 for WORKFLOW in "${VISION_WORKFLOWS[@]}"; do
     for ARCH in "${ARCHITECTURES[@]}"; do
 
-        MODELS_DIR="models/${WORKFLOW}/${ARCH}"
-        RESULTS_DIR="results/${WORKFLOW}/${ARCH}"
+        # Grava em pastas separadas por otimizador+LR, para nao sobrescrever
+        # resultados de outras rodadas com hiperparametros diferentes.
+        MODELS_DIR="models/${OPTIMIZER}_${LEARNING_RATE}/${WORKFLOW}/${ARCH}"
+        RESULTS_DIR="results/${OPTIMIZER}_${LEARNING_RATE}/${WORKFLOW}/${ARCH}"
         METRICS_DIR="${RESULTS_DIR}/metrics"
 
         echo "========================================================="
         echo "Iniciando experimento (vision):"
         echo "   Workflow:    ${WORKFLOW}"
         echo "   Arquitetura: ${ARCH}"
+        echo "   Otimizador:  ${OPTIMIZER}"
+        echo "   Learning Rate: ${LEARNING_RATE}"
         echo "========================================================="
-        log_progress "INICIADO: vision ${WORKFLOW} + ${ARCH}"
+        log_progress "INICIADO: vision ${WORKFLOW}+${ARCH} (opt=${OPTIMIZER}, lr=${LEARNING_RATE})"
 
         if uv run python -m src.main vision \
             --workflow "${WORKFLOW}" \
             --iterations "${ITERATIONS}" \
             --architecture "${ARCH}" \
             --device "${DEVICE}" \
+            --optmizer "${OPTIMIZER}" \
+            --learning-rate "${LEARNING_RATE}" \
             --models-dir "${MODELS_DIR}" \
             --metrics-dir "${METRICS_DIR}" \
             --results-dir "${RESULTS_DIR}"; then
             echo "Experimento ${WORKFLOW} com ${ARCH} concluido!"
-            log_progress "CONCLUIDO: vision ${WORKFLOW} + ${ARCH}"
+            log_progress "CONCLUIDO: vision ${WORKFLOW}+${ARCH}"
         else
             echo "ERRO ao rodar ${WORKFLOW} + ${ARCH} -- continuando para o proximo"
-            log_failure "vision ${WORKFLOW} + ${ARCH}"
+            log_failure "vision ${WORKFLOW}+${ARCH}"
         fi
         echo ""
     done
 done
 
-
 LM_WORKFLOWS=("wikitext_shakespeare")
 
 for LM_WORKFLOW in "${LM_WORKFLOWS[@]}"; do
 
-    MODELS_DIR="models/${LM_WORKFLOW}"
-    RESULTS_DIR="results/${LM_WORKFLOW}"
+    # Agora o subcomando "language" ja aceita --optmizer tambem.
+    MODELS_DIR="models/${OPTIMIZER}_${LEARNING_RATE}/${LM_WORKFLOW}"
+    RESULTS_DIR="results/${OPTIMIZER}_${LEARNING_RATE}/${LM_WORKFLOW}"
     METRICS_DIR="${RESULTS_DIR}/metrics"
 
     echo "========================================================="
     echo "Iniciando experimento (language):"
     echo "   Workflow: ${LM_WORKFLOW}"
+    echo "   Otimizador: ${OPTIMIZER}"
+    echo "   Learning Rate: ${LEARNING_RATE}"
     echo "========================================================="
-    log_progress "INICIADO: language ${LM_WORKFLOW}"
+    log_progress "INICIADO: language ${LM_WORKFLOW} (opt=${OPTIMIZER}, lr=${LEARNING_RATE})"
 
     if uv run python -m src.main language \
         --workflow "${LM_WORKFLOW}" \
         --iterations "${ITERATIONS}" \
         --device "${DEVICE}" \
+        --optmizer "${OPTIMIZER}" \
+        --learning-rate "${LEARNING_RATE}" \
         --models-dir "${MODELS_DIR}" \
         --metrics-dir "${METRICS_DIR}" \
         --results-dir "${RESULTS_DIR}"; then

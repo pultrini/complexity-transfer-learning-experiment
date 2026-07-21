@@ -5,12 +5,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar, Protocol
 
+import mlflow
 import torch
 
 from config.experiment_config import ExperimentConfig
 from config.workflows import Workflow, WorkflowStep
 from src.experiment import Experiment
 from utils.ploting import generate_workflow_plots
+from utils.statistical_tests import compare_configurations
 from utils.statistics import StatisticsCalculator
 
 
@@ -97,6 +99,9 @@ class Orchestrator:
         device: str | None = None,
         models_dir: str = "models",
         model_architecture: str = "resnet50",
+        optimizer_name: str = "adam",
+        learning_rate: float = 0.001,
+        use_windows: bool = False,
     ):
         self.max_iterations = max_iterations
         self.base_seed = base_seed
@@ -104,6 +109,9 @@ class Orchestrator:
         self.results_dir = results_dir
         self.models_dir = models_dir
         self.model_architecture = model_architecture
+        self.optimizer_name: str = optimizer_name
+        self.learning_rate: float = learning_rate
+        self.use_windows: bool = use_windows
         self.device = device or ("cuda:0" if torch.cuda.is_available() else "cpu")
         self.model_names = [spec.name for spec in self.MODEL_CONFIGS]
 
@@ -142,6 +150,7 @@ class Orchestrator:
         aggregated_path = Path(self.metrics_dir) / f"{workflow.name}_all_metrics.json"
 
         def build_config(step: WorkflowStep, iteration: int) -> ExperimentConfig:
+            windows = [0.2, 0.4, 0.6, 0.8, 1.0] if (self.use_windows and step.name == "source") else None
             return ExperimentConfig(
                 dataset_name=step.dataset_name,
                 num_epochs=step.num_epochs,
@@ -151,6 +160,9 @@ class Orchestrator:
                 checkpoint_path=step.checkpoint_path,
                 models_dir=self.models_dir,
                 model_architecture=self.model_architecture,
+                optimizer_name=self.optimizer_name,
+                learning_rate=self.learning_rate,
+                complexity_window_fractions=windows,
                 mlflow_experiment_name=workflow.mlflow_experiment_name,
                 mlflow_run_name=f"{step.mlflow_run_name}_iter{iteration}",
                 workflow_name=workflow.name,
@@ -164,6 +176,8 @@ class Orchestrator:
         print(f"\n==== Workflow {workflow.name} finished. Computing final statistics... ====")
         step_names = [step.name for step in workflow.steps]
         self._save_final_statistics(all_metrics, prefix=workflow.name, model_names=step_names)
+        if self.use_windows:
+            self._run_statistical_comparasion(workflow, all_metrics)
 
         self._generate_plots(workflow)
 
@@ -287,3 +301,36 @@ class Orchestrator:
             return json.loads(path.read_text(encoding="utf-8"))
         print(f"Metrics file not found: {file_path}")
         return None
+
+    def _run_statistical_comparasion(self, workflow: Workflow, all_metrics: dict) -> None:
+        results_for_wilcoxon = {}
+        for step in workflow.steps:
+            if "target_max_complexity" in step.name:
+                accs = []
+                for iter_name in all_metrics:
+                    accs.append(all_metrics[iter_name][step.name]["Max_accuracy"])
+                results_for_wilcoxon[step.name] = accs
+
+        if "target_max_complexity" not in results_for_wilcoxon:
+            print("Baseline (100% window) not found. Skipping statistical tests.")
+            return
+
+        try:
+            comparisons = compare_configurations(
+                results=results_for_wilcoxon,
+                baseline="target_max_complexity"
+            )
+        except ValueError as e:
+            print(f"Skipping statistical tests: {e}")
+            return
+
+        mlflow.set_tracking_uri("http://127.0.0.1:5000")
+        mlflow.set_experiment(experiment_name=workflow.mlflow_experiment_name)
+
+        with mlflow.start_run(run_name=f"{workflow.name}_statistical_summary"):
+            for comp_name, result in comparisons.items():
+                print(f"{comp_name} vs Baseline -> p-value: {result.p_value:.4f} | Effect: {result.interpretation}")
+                mlflow.log_metrics({
+                    f"{comp_name}_p_value": result.p_value,
+                    f"{comp_name}_effect_size": result.effect_size_r
+                })

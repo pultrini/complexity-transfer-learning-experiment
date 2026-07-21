@@ -1,8 +1,9 @@
 import argparse
 
-from config.lm_workflow import LM_WORKFLOWS
+from config.lm_workflows import LM_WORKFLOWS
 from config.workflows import WORKFLOWS
 from src.lm_orchestrator import LMOrchestrator
+from src.orchestrator import Orchestrator
 
 
 def build_vision_parser(subparsers) -> None:
@@ -18,6 +19,11 @@ def build_vision_parser(subparsers) -> None:
     parser.add_argument("--models-dir", type=str, default="models")
     parser.add_argument("--metrics-dir", type=str, default="results/metrics")
     parser.add_argument("--results-dir", type=str, default="results")
+    parser.add_argument("--optmizer", choices=["adam", "adamw", "sgd"], default="adam")
+    parser.add_argument("--learning-rate", type=float, default=0.001)
+    parser.add_argument(
+        "--use-windows", action="store_true", help="Enable the multi-window complexity analysis"
+    )
 
 
 def build_language_parser(subparsers) -> None:
@@ -37,6 +43,7 @@ def build_language_parser(subparsers) -> None:
     parser.add_argument("--num-heads", type=int, default=4)
     parser.add_argument("--seq-length", type=int, default=32)
     parser.add_argument("--batch-size", type=int, default=256)
+    parser.add_argument("--optmizer", choices=["adam", "adamw", "sgd"], default="adamw")
     parser.add_argument("--learning-rate", type=float, default=1e-4)
     parser.add_argument(
         "--max-train-samples",
@@ -47,8 +54,6 @@ def build_language_parser(subparsers) -> None:
 
 
 def run_vision(args: argparse.Namespace) -> None:
-    from src.orchestrator import Orchestrator
-
     orchestrator = Orchestrator(
         max_iterations=args.iterations,
         models_dir=args.models_dir,
@@ -56,18 +61,22 @@ def run_vision(args: argparse.Namespace) -> None:
         results_dir=args.results_dir,
         device=args.device,
         model_architecture=args.architecture,
+        optimizer_name=args.optmizer,
+        learning_rate=args.learning_rate,
+        use_windows=args.use_windows,
     )
 
     if args.workflow:
         workflow_factory = WORKFLOWS[args.workflow]
-        workflow = workflow_factory(models_dir=args.models_dir, metrics_dir=args.metrics_dir)
+        workflow = workflow_factory(
+            models_dir=args.models_dir, metrics_dir=args.metrics_dir, use_windows=args.use_windows
+        )
         orchestrator.run_workflow(workflow)
     else:
         orchestrator.run()
 
 
 def run_language(args: argparse.Namespace) -> None:
-
     orchestrator = LMOrchestrator(
         max_iterations=args.iterations,
         models_dir=args.models_dir,
@@ -81,6 +90,7 @@ def run_language(args: argparse.Namespace) -> None:
         num_attention_heads=args.num_heads,
         seq_length=args.seq_length,
         batch_size=args.batch_size,
+        optimizer_name=args.optmizer,
         learning_rate=args.learning_rate,
         max_train_samples=args.max_train_samples,
     )
