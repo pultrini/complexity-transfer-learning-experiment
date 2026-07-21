@@ -26,7 +26,7 @@ class LMExperimentConfig:
     num_layers: int = 4
     num_attention_heads: int = 4
     seq_length: int = 32
-    batch_size: int = 256
+    batch_size: int = 512 
     learning_rate: float = 1e-4
     max_grad_norm: float | None = 1.0
     max_train_samples: int | None = None

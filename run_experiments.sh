@@ -22,7 +22,7 @@ log_failure() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - FALHOU: $1" >> "${FAILURES_LOG}"
 }
 
-VISION_WORKFLOWS=("medmnist" "mnist")
+VISION_WORKFLOWS=("medmnist" "mnist" "tinyimagenet_catsdogs")
 ARCHITECTURES=("resnet50" "efficientnet_v2_s")
 
 for WORKFLOW in "${VISION_WORKFLOWS[@]}"; do
