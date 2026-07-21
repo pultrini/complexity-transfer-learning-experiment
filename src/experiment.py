@@ -1,5 +1,6 @@
 import json
 import math
+import shutil
 from pathlib import Path
 
 import mlflow
@@ -11,8 +12,7 @@ from config.experiment_config import ExperimentConfig
 from src.dataset import DatasetManager
 from src.model import ModelFactory
 from src.trainer import Trainer
-
-LEARNING_RATE = 0.001
+from utils.optmizers import build_optmizer
 
 
 class Experiment:
@@ -47,7 +47,11 @@ class Experiment:
                 checkpoint_type=self.config.checkpoint_type,
                 checkpoint_path=self.config.checkpoint_path,
             )
-            optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
+            optimizer = build_optmizer(
+                name=self.config.optimizer_name,
+                parameters=model.parameters(),
+                learning_rate=self.config.learning_rate
+            )
             criterion = nn.CrossEntropyLoss()
             trainer = Trainer(model, self.config.device)
 
@@ -81,7 +85,7 @@ class Experiment:
                 "dataset": self.config.dataset_name,
                 "num_epochs": self.config.num_epochs,
                 "optimizer": "Adam",
-                "learning_rate": LEARNING_RATE,
+                "learning_rate": self.config.learning_rate,
                 "strategy": self.config.strategy,
                 "architecture": self.config.model_architecture,
             }
@@ -100,7 +104,7 @@ class Experiment:
         if self.config.mlflow_experiment_name:
             mlflow.set_experiment(experiment_name=self.config.mlflow_experiment_name)
         elif self.config.mlflow_experiment_id:
-            mlflow.set_experiment(experiment_id=self.config.mlflow_experiment_id)
+            mlflow.set_experiment(experiment_id=str(self.config.mlflow_experiment_id))
 
     def _train_loop(
         self,
@@ -118,6 +122,15 @@ class Experiment:
         best_loss = math.inf
         best_complexity = -math.inf
         checkpoint_prefix = self.config.dataset_name
+
+        use_windows = (
+            self.config.complexity_window_fractions is not None and len(self.config.complexity_window_fractions) > 0
+        )
+        temp_dir = Path()
+        if use_windows:
+            run_id = mlflow.active_run().info.run_id if mlflow.active_run() else "local"
+            temp_dir = Path(self.config.models_dir) / f"temp_{checkpoint_prefix}_{run_id}"
+            temp_dir.mkdir(parents=True, exist_ok=True)
 
         for epoch in range(1, self.config.num_epochs + 1):
             train_metrics = trainer.train_epoch(
@@ -146,9 +159,18 @@ class Experiment:
                 self._save_checkpoint(trainer.model, f"{checkpoint_prefix}_min_loss.pth")
                 best_loss = val_loss
 
-            if complexity > best_complexity:
-                self._save_checkpoint(trainer.model, f"{checkpoint_prefix}_max_complexity.pth")
-                best_complexity = complexity
+            if use_windows:
+                torch.save(trainer.model.state_dict(), temp_dir / f"epoch_{epoch}.pth")
+
+            else:  # noqa: PLR5501
+
+                if complexity > best_complexity:
+                    self._save_checkpoint(trainer.model, f"{checkpoint_prefix}_max_complexity.pth")
+                    best_complexity = complexity
+
+        if use_windows and temp_dir:
+            self._process_complexity_windows(history, temp_dir, checkpoint_prefix)
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
         return history
 
@@ -168,6 +190,25 @@ class Experiment:
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
         checkpoint_path = checkpoint_dir / filename
         torch.save(model.state_dict(), checkpoint_path)
+
+
+    def _process_complexity_windows(self, history: dict, temp_dir: Path, checkpoint_prefix: str) -> None:
+        fractions = self.config.complexity_window_fractions or [1.0]
+
+        for frac in fractions:
+            max_epoch = math.ceil(frac * self.config.num_epochs)
+            window_complexities = history["complexity"][:max_epoch]
+            best_epoch = int(np.argmax(window_complexities)) + 1
+
+            src_ckpt = temp_dir / f"epoch_{best_epoch}.pth"
+
+            if frac == 1.0:
+                dst_ckpt = Path(self.config.models_dir) / f"{checkpoint_prefix}_max_complexity.pth"
+            else:
+                frac_label = f"w{int(frac * 100)}"
+                dst_ckpt = Path(self.config.models_dir) / f"{checkpoint_prefix}_max_complexity_{frac_label}.pth"
+
+            shutil.copy2(src_ckpt, dst_ckpt)
 
     def _summarize_results(self, history: dict[str, list[float]]) -> dict[str, float]:
         """Reduce the per-epoch history into final best-value metrics.

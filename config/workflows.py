@@ -65,63 +65,75 @@ class Workflow:
         models_dir: str,
         metrics_dir: str,
         target_epochs: int | None = None,
+        use_windows: bool = False,
     ) -> Workflow:
-        """Build a standard source → target transfer learning workflow.
-
-        Creates four steps: pretraining on the source dataset, training the
-        target dataset from scratch, and two transfer learning runs using
-        checkpoints selected by 'min_loss' and 'max_complexity' criteria.
-        """
         target_epochs = target_epochs or cls.DEFAULT_TARGET_EPOCHS
+
+        steps = [
+            WorkflowStep(
+                name="source",
+                dataset_name=source,
+                num_epochs=source_epochs,
+                strategy="normal",
+                checkpoint_path=None,
+                output_file=f"{metrics_dir}/{metrics_prefix}_{source}_source.json",
+                mlflow_run_name=f"{source}_source_run",
+            ),
+            WorkflowStep(
+                name="target_no_transfer",
+                dataset_name=target,
+                num_epochs=target_epochs,
+                strategy="normal",
+                checkpoint_path=None,
+                output_file=f"{metrics_dir}/{metrics_prefix}_{target}_no_transfer.json",
+                mlflow_run_name=f"{target}_no_transfer_run",
+            ),
+            WorkflowStep(
+                name="target_min_loss",
+                dataset_name=target,
+                num_epochs=target_epochs,
+                strategy="normal",
+                checkpoint_path=f"{models_dir}/{source}_min_loss.pth",
+                output_file=f"{metrics_dir}/{metrics_prefix}_{target}_min_loss.json",
+                mlflow_run_name=f"{target}_min_loss_run",
+            ),
+            WorkflowStep(
+                name="target_max_complexity",
+                dataset_name=target,
+                num_epochs=target_epochs,
+                strategy="normal",
+                checkpoint_path=f"{models_dir}/{source}_max_complexity.pth",
+                output_file=f"{metrics_dir}/{metrics_prefix}_{target}_max_complexity.json",
+                mlflow_run_name=f"{target}_max_complexity_run",
+            ),
+        ]
+
+        if use_windows:
+            for w in [0.2, 0.4, 0.6, 0.8]:
+                w_str = f"w{int(w * 100)}"
+                steps.append(
+                    WorkflowStep(
+                        name=f"target_max_complexity_{w_str}",
+                        dataset_name=target,
+                        num_epochs=target_epochs,
+                        strategy="normal",
+                        checkpoint_path=f"{models_dir}/{source}_max_complexity_{w_str}.pth",
+                        output_file=f"{metrics_dir}/{metrics_prefix}_{target}_max_complexity_{w_str}.json",
+                        mlflow_run_name=f"{target}_max_complexity_{w_str}_run",
+                    )
+                )
 
         return cls(
             name=name,
             mlflow_experiment_name=mlflow_experiment_name,
             source_dataset=source,
             target_dataset=target,
-            steps=[
-                WorkflowStep(
-                    name="source",
-                    dataset_name=source,
-                    num_epochs=source_epochs,
-                    strategy="normal",
-                    checkpoint_path=None,
-                    output_file=f"{metrics_dir}/{metrics_prefix}_{source}_source.json",
-                    mlflow_run_name=f"{source}_source_run",
-                ),
-                WorkflowStep(
-                    name="target_no_transfer",
-                    dataset_name=target,
-                    num_epochs=target_epochs,
-                    strategy="normal",
-                    checkpoint_path=None,
-                    output_file=f"{metrics_dir}/{metrics_prefix}_{target}_no_transfer.json",
-                    mlflow_run_name=f"{target}_no_transfer_run",
-                ),
-                WorkflowStep(
-                    name="target_min_loss",
-                    dataset_name=target,
-                    num_epochs=target_epochs,
-                    strategy="normal",
-                    checkpoint_path=f"{models_dir}/{source}_min_loss.pth",
-                    output_file=f"{metrics_dir}/{metrics_prefix}_{target}_min_loss.json",
-                    mlflow_run_name=f"{target}_min_loss_run",
-                ),
-                WorkflowStep(
-                    name="target_max_complexity",
-                    dataset_name=target,
-                    num_epochs=target_epochs,
-                    strategy="normal",
-                    checkpoint_path=f"{models_dir}/{source}_max_complexity.pth",
-                    output_file=f"{metrics_dir}/{metrics_prefix}_{target}_max_complexity.json",
-                    mlflow_run_name=f"{target}_max_complexity_run",
-                ),
-            ],
+            steps=steps,
         )
 
     @classmethod
     def create_medmnist_workflow(
-        cls, models_dir: str = "models", metrics_dir: str = "results/metrics"
+        cls, models_dir: str = "models", metrics_dir: str = "results/metrics", use_windows: bool = False,
     ) -> Workflow:
         """Create the TissueMNIST → BloodMNIST transfer learning workflow."""
         return cls._build_transfer_workflow(
@@ -133,11 +145,12 @@ class Workflow:
             metrics_prefix="medmnist",
             models_dir=models_dir,
             metrics_dir=metrics_dir,
+            use_windows=use_windows
         )
 
     @classmethod
     def create_mnist_workflow(
-        cls, models_dir: str = "models", metrics_dir: str = "results/metrics"
+        cls, models_dir: str = "models", metrics_dir: str = "results/metrics", use_windows: bool = False
     ) -> Workflow:
         """Create the MNIST → FashionMNIST transfer learning workflow."""
         return cls._build_transfer_workflow(
@@ -145,15 +158,16 @@ class Workflow:
             mlflow_experiment_name="mnist_transfer",
             source="MNIST",
             target="FashionMNIST",
-            source_epochs=50,
+            source_epochs=10,
             metrics_prefix="mnist",
             models_dir=models_dir,
             metrics_dir=metrics_dir,
+            use_windows=use_windows
         )
 
     @classmethod
     def create_tinyimagenet_catsdogs_workflow(
-        cls, models_dir: str = "models", metrics_dir: str = "results/metrics"
+        cls, models_dir: str = "models", metrics_dir: str = "results/metrics", use_windows: bool = False
     ) -> Workflow:
         """Create the TinyImageNet -> CatsVsDogs transfer learning workflow."""
         return cls._build_transfer_workflow(
@@ -165,6 +179,7 @@ class Workflow:
             metrics_prefix="tinyimagenet_catsdogs",
             models_dir=models_dir,
             metrics_dir=metrics_dir,
+            use_windows=use_windows
         )
 
 

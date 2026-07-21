@@ -1,5 +1,6 @@
 import csv
 import sys
+from pathlib import Path
 
 import torch
 from torch import nn
@@ -13,28 +14,44 @@ class TextDataset(Dataset):
         self.seq_length = seq_length
         self.tokenizer = tokenizer
 
-        with open(file_path, encoding="utf-8", errors="ignore") as f:
-            if file_path.endswith(".csv"):
-                reader = csv.DictReader(f)
-                text = "".join(row["text"] for row in reader)
-            else:
-                text = f.read()
+        tokenizer_id = getattr(tokenizer, "name_or_path", "default_tokenizer").replace("/", "_")
+        cache_suffix = f".{tokenizer_id}_seq{seq_length}"
+        if max_samples:
+            cache_suffix += f"_max{max_samples}"
+        cache_suffix += ".cache.pt"
 
-        encodings = tokenizer(
-            text,
-            return_tensors="pt",
-            padding=False,
-            truncation=False,
-            add_special_tokens=False,
-            return_attention_mask=False,
-            max_length=None,
-            verbose=False,
-        )
-        self.input_ids = encodings["input_ids"][0]
+        cache_path = Path(file_path).with_suffix(cache_suffix)
 
-        if max_samples is not None:
-            max_length = max_samples * seq_length
-            self.input_ids = self.input_ids[:max_length]
+        if cache_path.exists():
+            print(f"⚡ Loading cache dataset: {cache_path.name}")
+            self.input_ids = torch.load(cache_path, weights_only=True)
+        else:
+            print(f"⏳ Processing and tokenizer the data: {Path(file_path).name}")
+            with open(file_path, encoding="utf-8", errors="ignore") as f:
+                if file_path.endswith(".csv"):
+                    reader = csv.DictReader(f)
+                    text = "".join(row["text"] for row in reader)
+                else:
+                    text = f.read()
+
+            encodings = tokenizer(
+                text,
+                return_tensors="pt",
+                padding=False,
+                truncation=False,
+                add_special_tokens=False,
+                return_attention_mask=False,
+                max_length=None,
+                verbose=False,
+            )
+            self.input_ids = encodings["input_ids"][0]
+
+            if max_samples is not None:
+                max_length = max_samples * seq_length
+                self.input_ids = self.input_ids[:max_length]
+
+            torch.save(self.input_ids, cache_path)
+            print(f"✅ Cache salvo em: {cache_path.name}")
 
     def __len__(self) -> int:
         return max(0, len(self.input_ids) - self.seq_length)

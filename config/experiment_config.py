@@ -6,6 +6,7 @@ from config.dataset_registry import DATASET_REGISTRY
 Strategy = Literal["normal", "complexity", "min_loss"]
 CheckpointType = Literal["loss", "complexity"]
 ModelArchitecture = Literal["resnet50", "efficientnet_v2_s"]
+OptimizerName = Literal["adam", "adamw", "sgd"]
 
 @dataclass
 class ExperimentConfig:
@@ -43,8 +44,11 @@ class ExperimentConfig:
     checkpoint_type: CheckpointType | None = None
     checkpoint_path: str | None = None
     model_architecture: ModelArchitecture = "resnet50"
+    optimizer_name: OptimizerName = "adam"
+    learning_rate: float = 0.001
     models_dir: str = "models"
     data_root: str = "data"
+    complexity_window_fractions: list[float] | None = None
     mlflow_uri: str = "http://127.0.0.1:5000"
     mlflow_experiment_id: int | None = None
     mlflow_experiment_name: str | None = None
@@ -54,7 +58,15 @@ class ExperimentConfig:
 
     VALID_STRATEGIES: ClassVar[set[Strategy]] = {"normal", "complexity", "min_loss"}
     VALID_ARCHITECTURES: ClassVar[set[ModelArchitecture]] = {"resnet50", "efficientnet_v2_s"}
+    VALID_OPTIMIZERS: ClassVar[set[OptimizerName]] = {"adam", "adamw", "sgd"}
 
+
+    def __post_init__(self) -> None:
+        self._validate_strategy()
+        self._validate_dataset()
+        self._validate_architecture()
+        self._validate_optimizer()
+        self._validate_complexity_windows()
 
     def _validate_strategy(self) -> None:
         if self.strategy not in self.VALID_STRATEGIES:
@@ -74,3 +86,19 @@ class ExperimentConfig:
                 f"Invalid model_architecture: {self.model_architecture!r}. "
                 f"Must be one of {sorted(self.VALID_ARCHITECTURES)}."
             )
+
+    def _validate_optimizer(self) -> None:
+        if self.optimizer_name not in self.VALID_OPTIMIZERS:
+            raise ValueError(
+                f"Invalid optimizer_name: {self.optimizer_name!r}. "
+                f"Must be one of {sorted(self.VALID_OPTIMIZERS)}."
+            )
+
+    def _validate_complexity_windows(self) -> None:
+        if self.complexity_window_fractions is None:
+            return
+        for fraction in self.complexity_window_fractions:
+            if not (0 < fraction <= 1):
+                raise ValueError(
+                    f"complexity_window_fractions must all be in (0, 1], got {fraction!r}."
+                )

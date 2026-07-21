@@ -5,7 +5,7 @@ from pathlib import Path
 import torch
 
 from config.lm_experiment_config import LMExperimentConfig
-from config.lm_workflow import LMWorkflow
+from config.lm_workflows import LMWorkflow
 from src.lm_experiment import LMExperiment
 from utils.statistics import LM_METRICS, StatisticsCalculator
 
@@ -13,10 +13,6 @@ from utils.statistics import LM_METRICS, StatisticsCalculator
 class LMOrchestrator:
     """Runs multiple iterations of a language-model transfer learning
     workflow and aggregates the results.
-
-    Mirrors ``Orchestrator`` (vision), but only supports workflow-style runs
-    (there is no standard-loop/MODEL_CONFIGS equivalent for LM experiments
-    yet) and uses ``LM_METRICS`` (no accuracy) when aggregating statistics.
     """
 
     def __init__(
@@ -33,6 +29,7 @@ class LMOrchestrator:
         num_attention_heads: int = 4,
         seq_length: int = 32,
         batch_size: int = 256,
+        optimizer_name: str = "adamw",
         learning_rate: float = 1e-4,
         max_train_samples: int | None = None,
     ):
@@ -47,6 +44,7 @@ class LMOrchestrator:
         self.num_attention_heads = num_attention_heads
         self.seq_length = seq_length
         self.batch_size = batch_size
+        self.optimizer_name = optimizer_name
         self.learning_rate = learning_rate
         self.max_train_samples = max_train_samples
         self.device = device or ("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -84,6 +82,8 @@ class LMOrchestrator:
         step_names = [step.name for step in workflow.steps]
         self._save_final_statistics(all_metrics, prefix=workflow.name, model_names=step_names)
 
+        self._generate_plots(workflow)
+
     def _build_config(self, workflow: LMWorkflow, step, iteration: int) -> LMExperimentConfig:
         return LMExperimentConfig(
             dataset_name=step.dataset_name,
@@ -100,6 +100,7 @@ class LMOrchestrator:
             num_attention_heads=self.num_attention_heads,
             seq_length=self.seq_length,
             batch_size=self.batch_size,
+            optimizer_name=self.optimizer_name,
             learning_rate=self.learning_rate,
             max_train_samples=self.max_train_samples,
             mlflow_experiment_name=workflow.mlflow_experiment_name,
@@ -107,6 +108,29 @@ class LMOrchestrator:
             workflow_name=workflow.name,
             step_name=step.name,
         )
+
+    def _generate_plots(self, workflow: LMWorkflow) -> None:
+        """Generate/update IEEE-style plots directly from MLflow after this
+        workflow finishes.
+        """
+        try:
+            from utils.ieee_plotting import generate_workflow_plots
+
+            generate_workflow_plots(
+                workflow_name=workflow.name,
+                mlflow_experiment_name=workflow.mlflow_experiment_name,
+                architecture="transformer_lm",
+                source_dataset_label=workflow.source_dataset,
+                target_dataset_label=workflow.target_dataset,
+                output_dir=f"{self.results_dir}/plots",
+                multi_config_metrics=[
+                    ("val_loss", "Loss", "loss"),
+                    ("complexity", "Complexity", "complexity"),
+                ],
+                include_multi_model=False,
+            )
+        except Exception as exc:  # noqa: BLE001 -- plotting must never fail the run
+            print(f"[warning] Plot generation failed, continuing anyway: {exc}")
 
     def _release_gpu_memory(self) -> None:
         """Force garbage collection and release cached CUDA memory between runs."""

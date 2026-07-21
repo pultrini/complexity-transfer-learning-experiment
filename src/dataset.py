@@ -113,7 +113,13 @@ class DatasetManager:
     def _make_loader(self, dataset: Dataset, batch_size: int) -> DataLoader:
         """Wrap a dataset in a DataLoader with the manager's standard settings."""
         return DataLoader(
-            dataset=dataset, batch_size=batch_size, shuffle=True, drop_last=True
+            dataset=dataset,
+            batch_size=batch_size,
+            shuffle=True,
+            drop_last=True,
+            num_workers=8,
+            pin_memory=True,
+            persistent_workers=True,
         )
 
     def _ensure_dataloaders(self) -> None:
