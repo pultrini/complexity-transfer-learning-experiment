@@ -138,7 +138,7 @@ class Workflow:
         """Create the TissueMNIST → BloodMNIST transfer learning workflow."""
         return cls._build_transfer_workflow(
             name="medmnist",
-            mlflow_experiment_name="medmnist_transfer",
+            mlflow_experiment_name="medmnist_transfer_window" if use_windows else "medimnist_transfer",
             source="TissueMNIST",
             target="BloodMNIST",
             source_epochs=50,
@@ -155,7 +155,7 @@ class Workflow:
         """Create the MNIST → FashionMNIST transfer learning workflow."""
         return cls._build_transfer_workflow(
             name="mnist",
-            mlflow_experiment_name="mnist_transfer",
+            mlflow_experiment_name="mnist_transfer_use_windows" if use_windows else "mnist_transfer",
             source="MNIST",
             target="FashionMNIST",
             source_epochs=10,
@@ -172,7 +172,7 @@ class Workflow:
         """Create the TinyImageNet -> CatsVsDogs transfer learning workflow."""
         return cls._build_transfer_workflow(
             name="tinyimagenet_catsdogs",
-            mlflow_experiment_name="tinyimagenet_catsdogs_transfer",
+            mlflow_experiment_name="tinyimagenet_catsdogs_transfer_use_windows" if use_windows else "tinyimagenet_catsdogs_transfer",
             source="TinyImageNet",
             target="CatsVsDogs",
             source_epochs=50,
