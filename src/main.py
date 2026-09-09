@@ -1,6 +1,6 @@
 import argparse
 
-from config.lm_workflows import LM_WORKFLOWS
+from config.lm_workflow import LM_WORKFLOWS
 from config.workflows import WORKFLOWS
 from src.lm_orchestrator import LMOrchestrator
 from src.orchestrator import Orchestrator

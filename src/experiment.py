@@ -84,7 +84,7 @@ class Experiment:
             {
                 "dataset": self.config.dataset_name,
                 "num_epochs": self.config.num_epochs,
-                "optimizer": "Adam",
+                "optimizer": self.config.optimizer_name,
                 "learning_rate": self.config.learning_rate,
                 "strategy": self.config.strategy,
                 "architecture": self.config.model_architecture,

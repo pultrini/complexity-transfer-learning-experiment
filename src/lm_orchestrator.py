@@ -5,7 +5,7 @@ from pathlib import Path
 import torch
 
 from config.lm_experiment_config import LMExperimentConfig
-from config.lm_workflows import LMWorkflow
+from config.lm_workflow import LMWorkflow
 from src.lm_experiment import LMExperiment
 from utils.statistics import LM_METRICS, StatisticsCalculator
 
