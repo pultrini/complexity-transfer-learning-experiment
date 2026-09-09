@@ -74,6 +74,7 @@ class Experiment:
 
             self._save_results(results)
             mlflow.log_artifact(self.config.output_file)
+            self._log_model_and_checkpoints(model)
 
             print(f"Run results saved to: {self.config.output_file}")
             return results
@@ -88,6 +89,10 @@ class Experiment:
                 "learning_rate": self.config.learning_rate,
                 "strategy": self.config.strategy,
                 "architecture": self.config.model_architecture,
+                "train_with_validation": self.config.train_with_validation,
+                "evaluation_split": (
+                    "test" if self.config.train_with_validation else "validation"
+                ),
             }
         )
         if self.config.workflow_name:
@@ -132,13 +137,20 @@ class Experiment:
             temp_dir = Path(self.config.models_dir) / f"temp_{checkpoint_prefix}_{run_id}"
             temp_dir.mkdir(parents=True, exist_ok=True)
 
+        train_loader = (
+            self.dataset_manager.train_with_validation_loader
+            if self.config.train_with_validation
+            else self.dataset_manager.train_loader
+        )
+        evaluation_loader = (
+            self.dataset_manager.test_loader
+            if self.config.train_with_validation
+            else self.dataset_manager.val_loader
+        )
+
         for epoch in range(1, self.config.num_epochs + 1):
-            train_metrics = trainer.train_epoch(
-                self.dataset_manager.train_loader,
-                criterion,
-                optimizer
-            )
-            val_metrics = trainer.validate_epoch(self.dataset_manager.val_loader, criterion)
+            train_metrics = trainer.train_epoch(train_loader, criterion, optimizer)
+            val_metrics = trainer.validate_epoch(evaluation_loader, criterion)
 
             val_acc = val_metrics["acc"]
             val_loss = val_metrics["loss"]
@@ -190,6 +202,31 @@ class Experiment:
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
         checkpoint_path = checkpoint_dir / filename
         torch.save(model.state_dict(), checkpoint_path)
+
+    def _log_model_and_checkpoints(self, model: nn.Module) -> None:
+        """Track the trained model and its selected checkpoints in MLflow."""
+        mlflow.pytorch.log_model(
+            model,
+            name="trained_model",
+            serialization_format="pickle",
+        )
+
+        checkpoint_prefix = self.config.dataset_name
+        checkpoint_names = [
+            f"{checkpoint_prefix}_min_loss.pth",
+            f"{checkpoint_prefix}_max_complexity.pth",
+        ]
+        for fraction in self.config.complexity_window_fractions or []:
+            if fraction < 1.0:
+                checkpoint_names.append(
+                    f"{checkpoint_prefix}_max_complexity_w{int(fraction * 100)}.pth"
+                )
+
+        checkpoint_dir = Path(self.config.models_dir)
+        for checkpoint_name in checkpoint_names:
+            checkpoint_path = checkpoint_dir / checkpoint_name
+            if checkpoint_path.exists():
+                mlflow.log_artifact(str(checkpoint_path), artifact_path="checkpoints")
 
 
     def _process_complexity_windows(self, history: dict, temp_dir: Path, checkpoint_prefix: str) -> None:

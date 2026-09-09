@@ -86,6 +86,7 @@ class LMExperiment:
 
             self._save_results(results)
             mlflow.log_artifact(self.config.output_file)
+            self._log_model_and_checkpoints(model)
 
             print(f"Run results saved to: {self.config.output_file}")
             return results
@@ -187,6 +188,20 @@ class LMExperiment:
         checkpoint_dir = Path(self.config.models_dir)
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
         torch.save(model.state_dict(), checkpoint_dir / filename)
+
+    def _log_model_and_checkpoints(self, model: nn.Module) -> None:
+        """Track the trained model and its selected checkpoints in MLflow."""
+        mlflow.pytorch.log_model(
+            model,
+            name="trained_model",
+            serialization_format="pickle",
+        )
+
+        checkpoint_dir = Path(self.config.models_dir)
+        for suffix in ("min_loss", "max_complexity"):
+            checkpoint_path = checkpoint_dir / f"{self.config.dataset_name}_{suffix}.pth"
+            if checkpoint_path.exists():
+                mlflow.log_artifact(str(checkpoint_path), artifact_path="checkpoints")
 
     def _summarize_results(self, history: dict[str, list[float]]) -> dict[str, float]:
         """Reduce the per-epoch history into final best-value metrics."""

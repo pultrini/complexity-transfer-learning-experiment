@@ -35,6 +35,8 @@ class ExperimentConfig:
         workflow_name: Name of the parent workflow, if this config is part
             of one.
         step_name: Name of the step within the parent workflow.
+        train_with_validation: Whether to include the validation split in the
+            training loader and evaluate on the test split instead.
     """
     dataset_name: str
     num_epochs: int
@@ -55,6 +57,7 @@ class ExperimentConfig:
     mlflow_run_name: str | None = None
     workflow_name: str | None = None
     step_name: str | None = None
+    train_with_validation: bool = False
 
     VALID_STRATEGIES: ClassVar[set[Strategy]] = {"normal", "complexity", "min_loss"}
     VALID_ARCHITECTURES: ClassVar[set[ModelArchitecture]] = {"resnet50", "efficientnet_v2_s"}

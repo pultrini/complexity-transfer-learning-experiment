@@ -148,6 +148,12 @@ python -m src.main --workflow medmnist --architecture efficientnet_v2_s --iterat
 
 # Run on CPU (no GPU available)
 python -m src.main --workflow medmnist --device cpu --iterations 3
+
+# Train only the source step with train + validation; evaluate it on test
+python -m src.main vision --workflow medmnist --source-train-with-validation
+
+# Run the source-with-validation experiment matrix configured in the script
+./run_source_with_validation.sh
 ```
 
 ### CLI Parameters
@@ -161,6 +167,7 @@ python -m src.main --workflow medmnist --device cpu --iterations 3
 | `--models-dir` | Checkpoint output directory | Any path | `models/` |
 | `--metrics-dir` | Per-run metrics output directory | Any path | `results/metrics/` |
 | `--results-dir` | Final aggregated results directory | Any path | `results/` |
+| `--source-train-with-validation` | Use train + validation in the source step and test for its validation metrics | Flag | Disabled |
 
 ### Containerized Execution (Docker)
 
@@ -247,7 +254,8 @@ All runs are logged to MLflow, providing:
 
 - Side-by-side comparison across runs, architectures, and checkpoint-selection strategies
 - Convergence plots for accuracy, loss, and complexity
-- Versioned artifacts (checkpoints, result files) attached to each run
+- A loadable `trained_model` MLflow Model attached to each run
+- Versioned checkpoint and result-file artifacts attached to each run
 
 ## Reproducibility Statement
 

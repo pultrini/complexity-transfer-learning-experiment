@@ -102,6 +102,7 @@ class Orchestrator:
         optimizer_name: str = "adam",
         learning_rate: float = 0.001,
         use_windows: bool = False,
+        source_train_with_validation: bool = False,
     ):
         self.max_iterations = max_iterations
         self.base_seed = base_seed
@@ -112,6 +113,7 @@ class Orchestrator:
         self.optimizer_name: str = optimizer_name
         self.learning_rate: float = learning_rate
         self.use_windows: bool = use_windows
+        self.source_train_with_validation = source_train_with_validation
         self.device = device or ("cuda:0" if torch.cuda.is_available() else "cpu")
         self.model_names = [spec.name for spec in self.MODEL_CONFIGS]
 
@@ -167,6 +169,9 @@ class Orchestrator:
                 mlflow_run_name=f"{step.mlflow_run_name}_iter{iteration}",
                 workflow_name=workflow.name,
                 step_name=step.name,
+                train_with_validation=(
+                    self.source_train_with_validation and step.name == "source"
+                ),
             )
 
         all_metrics = self._run_iterations(

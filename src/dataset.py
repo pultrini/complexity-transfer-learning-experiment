@@ -5,7 +5,7 @@ import torch
 import torchvision
 from medmnist import BloodMNIST, TissueMNIST
 from PIL import Image, UnidentifiedImageError
-from torch.utils.data import DataLoader, Dataset, random_split
+from torch.utils.data import ConcatDataset, DataLoader, Dataset, random_split
 from torchvision.datasets import MNIST, FashionMNIST
 from torchvision.transforms import v2
 
@@ -92,6 +92,7 @@ class DatasetManager:
         self.batch_size_eval = batch_size_eval
 
         self._train_loader: DataLoader | None = None
+        self._train_with_validation_loader: DataLoader | None = None
         self._val_loader: DataLoader | None = None
         self._test_loader: DataLoader | None = None
 
@@ -281,6 +282,19 @@ class DatasetManager:
     def train_loader(self) -> DataLoader:
         self._ensure_dataloaders()
         return self._train_loader
+
+    @property
+    def train_with_validation_loader(self) -> DataLoader:
+        """Return a training loader containing both train and validation data."""
+        self._ensure_dataloaders()
+        if self._train_with_validation_loader is None:
+            combined_dataset = ConcatDataset(
+                [self._train_loader.dataset, self._val_loader.dataset]
+            )
+            self._train_with_validation_loader = self._make_loader(
+                combined_dataset, self.batch_size_train
+            )
+        return self._train_with_validation_loader
 
     @property
     def val_loader(self) -> DataLoader:

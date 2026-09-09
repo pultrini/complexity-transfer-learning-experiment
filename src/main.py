@@ -24,6 +24,14 @@ def build_vision_parser(subparsers) -> None:
     parser.add_argument(
         "--use-windows", action="store_true", help="Enable the multi-window complexity analysis"
     )
+    parser.add_argument(
+        "--source-train-with-validation",
+        action="store_true",
+        help=(
+            "Train the workflow source step with train + validation data and "
+            "use the test split for val_loss/val_accuracy."
+        ),
+    )
 
 
 def build_language_parser(subparsers) -> None:
@@ -64,6 +72,7 @@ def run_vision(args: argparse.Namespace) -> None:
         optimizer_name=args.optmizer,
         learning_rate=args.learning_rate,
         use_windows=args.use_windows,
+        source_train_with_validation=args.source_train_with_validation,
     )
 
     if args.workflow:
