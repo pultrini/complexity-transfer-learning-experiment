@@ -53,7 +53,11 @@ class Experiment:
                 learning_rate=self.config.learning_rate
             )
             criterion = nn.CrossEntropyLoss()
-            trainer = Trainer(model, self.config.device)
+            trainer = Trainer(
+                model,
+                self.config.device,
+                complexity_variant=self.config.complexity_variant,
+            )
 
             history = self._train_loop(trainer, criterion, optimizer)
             results = self._summarize_results(history)
@@ -93,6 +97,7 @@ class Experiment:
                 "evaluation_split": (
                     "test" if self.config.train_with_validation else "validation"
                 ),
+                "complexity_variant": self.config.complexity_variant,
             }
         )
         if self.config.workflow_name:

@@ -4,6 +4,11 @@ from typing import ClassVar, Literal
 from config.dataset_registry import DATASET_REGISTRY
 
 Strategy = Literal["normal", "complexity", "min_loss"]
+ComplexityVariant = Literal[
+    "adaptive_linear", "fixed_64", "fixed_256", "fixed_1024", "normalized",
+    "jensen_shannon", "hard_binning", "no_bn_bias", "quantile_normalization",
+    "mean_per_layer",
+]
 CheckpointType = Literal["loss", "complexity"]
 ModelArchitecture = Literal["resnet50", "efficientnet_v2_s"]
 OptimizerName = Literal["adam", "adamw", "sgd"]
@@ -58,10 +63,16 @@ class ExperimentConfig:
     workflow_name: str | None = None
     step_name: str | None = None
     train_with_validation: bool = False
+    complexity_variant: ComplexityVariant = "adaptive_linear"
 
     VALID_STRATEGIES: ClassVar[set[Strategy]] = {"normal", "complexity", "min_loss"}
     VALID_ARCHITECTURES: ClassVar[set[ModelArchitecture]] = {"resnet50", "efficientnet_v2_s"}
     VALID_OPTIMIZERS: ClassVar[set[OptimizerName]] = {"adam", "adamw", "sgd"}
+    VALID_COMPLEXITY_VARIANTS: ClassVar[set[ComplexityVariant]] = {
+        "adaptive_linear", "fixed_64", "fixed_256", "fixed_1024", "normalized",
+        "jensen_shannon", "hard_binning", "no_bn_bias", "quantile_normalization",
+        "mean_per_layer",
+    }
 
 
     def __post_init__(self) -> None:
@@ -70,6 +81,7 @@ class ExperimentConfig:
         self._validate_architecture()
         self._validate_optimizer()
         self._validate_complexity_windows()
+        self._validate_complexity_variant()
 
     def _validate_strategy(self) -> None:
         if self.strategy not in self.VALID_STRATEGIES:
@@ -105,3 +117,10 @@ class ExperimentConfig:
                 raise ValueError(
                     f"complexity_window_fractions must all be in (0, 1], got {fraction!r}."
                 )
+
+    def _validate_complexity_variant(self) -> None:
+        if self.complexity_variant not in self.VALID_COMPLEXITY_VARIANTS:
+            raise ValueError(
+                f"Invalid complexity_variant: {self.complexity_variant!r}. "
+                f"Must be one of {sorted(self.VALID_COMPLEXITY_VARIANTS)}."
+            )

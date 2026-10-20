@@ -18,7 +18,16 @@ class LMCComplexity:
     is) to avoid an unnecessary CPU round-trip for large parameter vectors.
     """
 
-    def __init__(self, max_bin_sample_size: int = 10_000):
+    def __init__(
+        self,
+        max_bin_sample_size: int = 10_000,
+        *,
+        fixed_num_bins: int | None = None,
+        normalized: bool = False,
+        divergence: str = "disequilibrium",
+        hard_binning: bool = False,
+        quantile_normalization: bool = False,
+    ):
         """
         Args:
             max_bin_sample_size: Maximum number of weights sampled to estimate
@@ -27,6 +36,15 @@ class LMCComplexity:
                 large models, at negligible cost to bin-width accuracy.
         """
         self.max_bin_sample_size = max_bin_sample_size
+        if fixed_num_bins is not None and fixed_num_bins < 1:
+            raise ValueError("fixed_num_bins must be positive")
+        if divergence not in {"disequilibrium", "jensen_shannon"}:
+            raise ValueError(f"Unsupported divergence: {divergence!r}")
+        self.fixed_num_bins = fixed_num_bins
+        self.normalized = normalized
+        self.divergence = divergence
+        self.hard_binning = hard_binning
+        self.quantile_normalization = quantile_normalization
 
     def compute(self, weights: torch.Tensor | np.ndarray) -> tuple[float, float, float]:
         """Compute the full LMC complexity measure for a weight vector.
@@ -44,7 +62,18 @@ class LMCComplexity:
 
         probabilities = self._compute_probabilities(weights)
         entropy = self._shannon_entropy(probabilities)
-        disequilibrium = self._disequilibrium(probabilities)
+        disequilibrium = (
+            self._jensen_shannon_divergence(probabilities)
+            if self.divergence == "jensen_shannon"
+            else self._disequilibrium(probabilities)
+        )
+        if self.normalized:
+            if probabilities.numel() > 1:
+                entropy /= math.log(probabilities.numel())
+            if self.divergence == "jensen_shannon":
+                disequilibrium /= math.log(2.0)
+            elif probabilities.numel() > 1:
+                disequilibrium /= 1.0 - (1.0 / probabilities.numel())
         complexity = entropy * disequilibrium
         return entropy, disequilibrium, complexity
 
@@ -66,23 +95,31 @@ class LMCComplexity:
             return torch.ones(1, device=weights.device, dtype=weights.dtype)
 
         normalized = (weights - weights_min) / (data_range + 1e-10)
-        num_bins = self._select_num_bins(normalized)
+        if self.quantile_normalization:
+            order = torch.argsort(normalized)
+            ranks = torch.empty_like(order, dtype=torch.float32)
+            ranks[order] = torch.arange(
+                order.numel(), device=weights.device, dtype=torch.float32
+            )
+            normalized = ranks / max(order.numel() - 1, 1)
+        num_bins = self.fixed_num_bins or self._select_num_bins(normalized)
 
         bin_edges = torch.linspace(0.0, 1.0, num_bins + 1, dtype=torch.float32, device=weights.device)
         bin_width = bin_edges[1] - bin_edges[0]
 
+        hist = torch.zeros(num_bins, device=weights.device, dtype=torch.float32)
         bin_pos = normalized / bin_width
         bin_floor = torch.floor(bin_pos)
         bin_left = bin_floor.long().clamp(0, num_bins - 1)
-        bin_right = (bin_floor + 1).long().clamp(0, num_bins - 1)
-
-        frac = bin_pos - bin_floor
-        weight_left = 1.0 - frac
-        weight_right = frac
-
-        hist = torch.zeros(num_bins, device=weights.device, dtype=torch.float32)
-        hist.scatter_add_(0, bin_left, weight_left)
-        hist.scatter_add_(0, bin_right, weight_right)
+        if self.hard_binning:
+            hist.scatter_add_(
+                0, bin_left, torch.ones_like(bin_left, dtype=torch.float32)
+            )
+        else:
+            bin_right = (bin_floor + 1).long().clamp(0, num_bins - 1)
+            frac = bin_pos - bin_floor
+            hist.scatter_add_(0, bin_left, 1.0 - frac)
+            hist.scatter_add_(0, bin_right, frac)
 
         probabilities = hist / hist.sum()
 
@@ -125,3 +162,11 @@ class LMCComplexity:
         num_bins = probabilities.numel()
         uniform_prob = 1.0 / num_bins
         return ((probabilities - uniform_prob) ** 2).sum().item()
+
+    def _jensen_shannon_divergence(self, probabilities: torch.Tensor) -> float:
+        """Compute Jensen-Shannon divergence from the uniform distribution."""
+        uniform = torch.full_like(probabilities, 1.0 / probabilities.numel())
+        midpoint = 0.5 * (probabilities + uniform)
+        kl_p = (probabilities * (torch.log(probabilities) - torch.log(midpoint))).sum()
+        kl_u = (uniform * (torch.log(uniform) - torch.log(midpoint))).sum()
+        return (0.5 * (kl_p + kl_u)).item()

@@ -156,6 +156,35 @@ python -m src.main vision --workflow medmnist --source-train-with-validation
 ./run_source_with_validation.sh
 ```
 
+### Complexity robustness matrix
+
+`run_complexity_robustness.sh` runs the source-checkpoint selection round for
+both vision architectures and the three vision workflows:
+
+| Label | Workflow |
+|---|---|
+| S1 | `medmnist` (TissueMNIST -> BloodMNIST) |
+| S2 | `mnist` (MNIST -> FashionMNIST) |
+| S3 | `tinyimagenet_catsdogs` (TinyImageNet -> CatsVsDogs) |
+
+For each combination it runs the baseline plus fixed bins (64, 256, 1024),
+normalized LMC, Jensen-Shannon divergence, hard binning, exclusion of BN/bias
+parameters, quantile normalization, and the mean of per-layer
+complexities. Each run writes its own checkpoints, MLflow artifacts, and
+`<workflow>_all_metrics.json`, so the `epoch_max_complexity` values are
+available without overwriting another variant. The generated `manifest.tsv`
+maps each matrix cell to its metrics file.
+
+```bash
+# Defaults: 3 iterations and cuda:0. Override without editing the script.
+ITERATIONS=3 DEVICE=cuda:0 ./run_complexity_robustness.sh
+```
+
+The baseline remains the previous adaptive-bin, linearly interpolated LMC.
+The estimator changes are implemented in `utils/complexity.py`; the selected
+variant is passed through `ExperimentConfig`, logged to MLflow, and used by
+`Trainer` for source checkpoint selection.
+
 ### CLI Parameters
 
 | Parameter | Description | Values | Default |

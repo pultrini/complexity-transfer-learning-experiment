@@ -103,6 +103,7 @@ class Orchestrator:
         learning_rate: float = 0.001,
         use_windows: bool = False,
         source_train_with_validation: bool = False,
+        complexity_variant: str = "adaptive_linear",
     ):
         self.max_iterations = max_iterations
         self.base_seed = base_seed
@@ -114,6 +115,7 @@ class Orchestrator:
         self.learning_rate: float = learning_rate
         self.use_windows: bool = use_windows
         self.source_train_with_validation = source_train_with_validation
+        self.complexity_variant = complexity_variant
         self.device = device or ("cuda:0" if torch.cuda.is_available() else "cpu")
         self.model_names = [spec.name for spec in self.MODEL_CONFIGS]
 
@@ -172,6 +174,7 @@ class Orchestrator:
                 train_with_validation=(
                     self.source_train_with_validation and step.name == "source"
                 ),
+                complexity_variant=self.complexity_variant,
             )
 
         all_metrics = self._run_iterations(

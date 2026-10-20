@@ -32,6 +32,16 @@ def build_vision_parser(subparsers) -> None:
             "use the test split for val_loss/val_accuracy."
         ),
     )
+    parser.add_argument(
+        "--complexity-variant",
+        choices=[
+            "adaptive_linear", "fixed_64", "fixed_256", "fixed_1024",
+            "normalized", "jensen_shannon", "hard_binning", "no_bn_bias",
+            "quantile_normalization", "mean_per_layer",
+        ],
+        default="adaptive_linear",
+        help="Complexity estimator variant used for source checkpoint selection.",
+    )
 
 
 def build_language_parser(subparsers) -> None:
@@ -73,6 +83,7 @@ def run_vision(args: argparse.Namespace) -> None:
         learning_rate=args.learning_rate,
         use_windows=args.use_windows,
         source_train_with_validation=args.source_train_with_validation,
+        complexity_variant=args.complexity_variant,
     )
 
     if args.workflow:

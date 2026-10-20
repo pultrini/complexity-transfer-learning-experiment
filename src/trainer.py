@@ -1,9 +1,11 @@
+from collections import defaultdict
 from typing import TypedDict
 
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
+from config.experiment_config import ComplexityVariant
 from utils.complexity import LMCComplexity
 
 
@@ -18,10 +20,64 @@ class EpochMetrics(TypedDict, total=False):
 class Trainer:
     """Runs per-epoch training and validation for a model."""
 
-    def __init__(self, model: nn.Module, device: str, lmc: LMCComplexity | None = None):
+    def __init__(
+        self,
+        model: nn.Module,
+        device: str,
+        lmc: LMCComplexity | None = None,
+        complexity_variant: ComplexityVariant = "adaptive_linear",
+    ):
         self.model = model.to(device)
         self.device = device
-        self.lmc = lmc or LMCComplexity()
+        self.lmc = lmc or self._build_complexity(complexity_variant)
+        self.mean_per_layer = complexity_variant == "mean_per_layer"
+        self.exclude_bn_bias = complexity_variant == "no_bn_bias"
+
+    def _build_complexity(self, variant: ComplexityVariant) -> LMCComplexity:
+        settings = {
+            "fixed_64": {"fixed_num_bins": 64},
+            "fixed_256": {"fixed_num_bins": 256},
+            "fixed_1024": {"fixed_num_bins": 1024},
+            "normalized": {"normalized": True},
+            "jensen_shannon": {"divergence": "jensen_shannon"},
+            "hard_binning": {"hard_binning": True},
+            "quantile_normalization": {"quantile_normalization": True},
+        }
+        return LMCComplexity(**settings.get(variant, {}))
+
+    def _complexity_metrics(self) -> tuple[float, float, float]:
+        batch_norm_parameters = {
+            id(parameter)
+            for module in self.model.modules()
+            if isinstance(module, nn.modules.batchnorm._BatchNorm)
+            for parameter in module.parameters(recurse=False)
+        }
+        named_parameters = [
+            (name, parameter)
+            for name, parameter in self.model.named_parameters()
+            if not (
+                self.exclude_bn_bias
+                and (name.endswith(".bias") or id(parameter) in batch_norm_parameters)
+            )
+        ]
+        if not named_parameters:
+            raise ValueError("No parameters remain for complexity computation.")
+        if self.mean_per_layer:
+            layers: defaultdict[str, list[torch.Tensor]] = defaultdict(list)
+            for name, parameter in named_parameters:
+                layer_name = name.rsplit(".", maxsplit=1)[0]
+                layers[layer_name].append(parameter.detach())
+            metrics = [
+                self.lmc.compute(torch.nn.utils.parameters_to_vector(parameters))
+                for parameters in layers.values()
+            ]
+            return tuple(
+                float(sum(values) / len(values)) for values in zip(*metrics, strict=True)
+            )
+        flattened = torch.nn.utils.parameters_to_vector(
+            [parameter for _, parameter in named_parameters]
+        )
+        return self.lmc.compute(flattened.detach())
 
     def train_epoch(
         self,
@@ -38,9 +94,7 @@ class Trainer:
             dataloader, criterion, optimizer=optimizer, train=True
         )
 
-        params = torch.nn.utils.parameters_to_vector(self.model.parameters())
-        params = params.cpu().detach().numpy()
-        entropy, disequilibrium, complexity = self.lmc.compute(params)
+        entropy, disequilibrium, complexity = self._complexity_metrics()
 
         return {
             "loss": loss / total,
