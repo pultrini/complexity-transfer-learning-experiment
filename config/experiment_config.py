@@ -64,7 +64,13 @@ class ExperimentConfig:
     step_name: str | None = None
     train_with_validation: bool = False
     complexity_variant: ComplexityVariant = "adaptive_linear"
+    # Neighborhood checkpoint sweep (source step only). Offsets are relative to
+    # each anchor epoch (e.g. [-3, -2, -1, 1, 2, 3]); 0 is excluded because the
+    # anchor checkpoint itself is already transferred by the main workflow.
+    sweep_offsets: list[int] | None = None
+    sweep_anchors: tuple[str, ...] = ("max_complexity", "min_loss")
 
+    VALID_SWEEP_ANCHORS: ClassVar[set[str]] = {"max_complexity", "min_loss"}
     VALID_STRATEGIES: ClassVar[set[Strategy]] = {"normal", "complexity", "min_loss"}
     VALID_ARCHITECTURES: ClassVar[set[ModelArchitecture]] = {"resnet50", "efficientnet_v2_s"}
     VALID_OPTIMIZERS: ClassVar[set[OptimizerName]] = {"adam", "adamw", "sgd"}
@@ -82,6 +88,7 @@ class ExperimentConfig:
         self._validate_optimizer()
         self._validate_complexity_windows()
         self._validate_complexity_variant()
+        self._validate_sweep()
 
     def _validate_strategy(self) -> None:
         if self.strategy not in self.VALID_STRATEGIES:
@@ -123,4 +130,18 @@ class ExperimentConfig:
             raise ValueError(
                 f"Invalid complexity_variant: {self.complexity_variant!r}. "
                 f"Must be one of {sorted(self.VALID_COMPLEXITY_VARIANTS)}."
+            )
+
+    def _validate_sweep(self) -> None:
+        if self.sweep_offsets is None:
+            return
+        if any(not isinstance(offset, int) or offset == 0 for offset in self.sweep_offsets):
+            raise ValueError(
+                f"sweep_offsets must be non-zero integers, got {self.sweep_offsets!r}."
+            )
+        invalid = set(self.sweep_anchors) - self.VALID_SWEEP_ANCHORS
+        if invalid:
+            raise ValueError(
+                f"Invalid sweep_anchors: {sorted(invalid)}. "
+                f"Must be a subset of {sorted(self.VALID_SWEEP_ANCHORS)}."
             )

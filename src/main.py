@@ -42,6 +42,25 @@ def build_vision_parser(subparsers) -> None:
         default="adaptive_linear",
         help="Complexity estimator variant used for source checkpoint selection.",
     )
+    parser.add_argument(
+        "--sweep-radius",
+        type=int,
+        default=0,
+        help=(
+            "Neighborhood checkpoint sweep: also fine-tune from the source checkpoints "
+            "at t*-R..t*+R (excluding t*) around each anchor. 0 disables the sweep."
+        ),
+    )
+    parser.add_argument(
+        "--sweep-step", type=int, default=1, help="Spacing between swept offsets (epochs)."
+    )
+    parser.add_argument(
+        "--sweep-anchors",
+        nargs="+",
+        choices=["max_complexity", "min_loss"],
+        default=["max_complexity", "min_loss"],
+        help="Anchor epochs around which the sweep is performed.",
+    )
 
 
 def build_language_parser(subparsers) -> None:
@@ -71,7 +90,21 @@ def build_language_parser(subparsers) -> None:
     )
 
 
+def sweep_offsets_from_args(args: argparse.Namespace) -> list[int] | None:
+    if args.sweep_radius <= 0:
+        return None
+    if args.sweep_step <= 0:
+        raise ValueError("--sweep-step must be positive")
+    return [
+        offset
+        for offset in range(-args.sweep_radius, args.sweep_radius + 1)
+        if offset != 0 and offset % args.sweep_step == 0
+    ]
+
+
 def run_vision(args: argparse.Namespace) -> None:
+    sweep_offsets = sweep_offsets_from_args(args)
+    sweep_anchors = tuple(args.sweep_anchors)
     orchestrator = Orchestrator(
         max_iterations=args.iterations,
         models_dir=args.models_dir,
@@ -84,12 +117,18 @@ def run_vision(args: argparse.Namespace) -> None:
         use_windows=args.use_windows,
         source_train_with_validation=args.source_train_with_validation,
         complexity_variant=args.complexity_variant,
+        sweep_offsets=sweep_offsets,
+        sweep_anchors=sweep_anchors,
     )
 
     if args.workflow:
         workflow_factory = WORKFLOWS[args.workflow]
         workflow = workflow_factory(
-            models_dir=args.models_dir, metrics_dir=args.metrics_dir, use_windows=args.use_windows
+            models_dir=args.models_dir,
+            metrics_dir=args.metrics_dir,
+            use_windows=args.use_windows,
+            sweep_offsets=sweep_offsets,
+            sweep_anchors=sweep_anchors,
         )
         orchestrator.run_workflow(workflow)
     else:

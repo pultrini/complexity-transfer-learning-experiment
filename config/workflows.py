@@ -66,6 +66,8 @@ class Workflow:
         metrics_dir: str,
         target_epochs: int | None = None,
         use_windows: bool = False,
+        sweep_offsets: list[int] | None = None,
+        sweep_anchors: tuple[str, ...] = ("max_complexity", "min_loss"),
     ) -> Workflow:
         target_epochs = target_epochs or cls.DEFAULT_TARGET_EPOCHS
 
@@ -123,6 +125,25 @@ class Workflow:
                     )
                 )
 
+        for anchor in sweep_anchors if sweep_offsets else ():
+            for offset in sweep_offsets:
+                label = f"off{'p' if offset > 0 else 'm'}{abs(offset)}"
+                steps.append(
+                    WorkflowStep(
+                        name=f"target_{anchor}_{label}",
+                        dataset_name=target,
+                        num_epochs=target_epochs,
+                        strategy="normal",
+                        checkpoint_path=f"{models_dir}/{source}_{anchor}_{label}.pth",
+                        output_file=f"{metrics_dir}/{metrics_prefix}_{target}_{anchor}_{label}.json",
+                        mlflow_run_name=f"{target}_{anchor}_{label}_run",
+                    )
+                )
+
+        if sweep_offsets:
+            # Keep sweep runs apart from the main experiments in MLflow.
+            mlflow_experiment_name = f"{mlflow_experiment_name}_sweep"
+
         return cls(
             name=name,
             mlflow_experiment_name=mlflow_experiment_name,
@@ -133,7 +154,7 @@ class Workflow:
 
     @classmethod
     def create_medmnist_workflow(
-        cls, models_dir: str = "models", metrics_dir: str = "results/metrics", use_windows: bool = False,
+        cls, models_dir: str = "models", metrics_dir: str = "results/metrics", use_windows: bool = False, **sweep_kwargs,
     ) -> Workflow:
         """Create the TissueMNIST → BloodMNIST transfer learning workflow."""
         return cls._build_transfer_workflow(
@@ -145,12 +166,13 @@ class Workflow:
             metrics_prefix="medmnist",
             models_dir=models_dir,
             metrics_dir=metrics_dir,
-            use_windows=use_windows
+            use_windows=use_windows,
+            **sweep_kwargs,
         )
 
     @classmethod
     def create_mnist_workflow(
-        cls, models_dir: str = "models", metrics_dir: str = "results/metrics", use_windows: bool = False
+        cls, models_dir: str = "models", metrics_dir: str = "results/metrics", use_windows: bool = False, **sweep_kwargs,
     ) -> Workflow:
         """Create the MNIST → FashionMNIST transfer learning workflow."""
         return cls._build_transfer_workflow(
@@ -162,12 +184,13 @@ class Workflow:
             metrics_prefix="mnist",
             models_dir=models_dir,
             metrics_dir=metrics_dir,
-            use_windows=use_windows
+            use_windows=use_windows,
+            **sweep_kwargs,
         )
 
     @classmethod
     def create_tinyimagenet_catsdogs_workflow(
-        cls, models_dir: str = "models", metrics_dir: str = "results/metrics", use_windows: bool = False
+        cls, models_dir: str = "models", metrics_dir: str = "results/metrics", use_windows: bool = False, **sweep_kwargs,
     ) -> Workflow:
         """Create the TinyImageNet -> CatsVsDogs transfer learning workflow."""
         return cls._build_transfer_workflow(
@@ -179,7 +202,8 @@ class Workflow:
             metrics_prefix="tinyimagenet_catsdogs",
             models_dir=models_dir,
             metrics_dir=metrics_dir,
-            use_windows=use_windows
+            use_windows=use_windows,
+            **sweep_kwargs,
         )
 
 

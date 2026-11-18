@@ -104,6 +104,8 @@ class Orchestrator:
         use_windows: bool = False,
         source_train_with_validation: bool = False,
         complexity_variant: str = "adaptive_linear",
+        sweep_offsets: list[int] | None = None,
+        sweep_anchors: tuple[str, ...] = ("max_complexity", "min_loss"),
     ):
         self.max_iterations = max_iterations
         self.base_seed = base_seed
@@ -116,6 +118,8 @@ class Orchestrator:
         self.use_windows: bool = use_windows
         self.source_train_with_validation = source_train_with_validation
         self.complexity_variant = complexity_variant
+        self.sweep_offsets = sweep_offsets
+        self.sweep_anchors = sweep_anchors
         self.device = device or ("cuda:0" if torch.cuda.is_available() else "cpu")
         self.model_names = [spec.name for spec in self.MODEL_CONFIGS]
 
@@ -175,6 +179,8 @@ class Orchestrator:
                     self.source_train_with_validation and step.name == "source"
                 ),
                 complexity_variant=self.complexity_variant,
+                sweep_offsets=self.sweep_offsets if step.name == "source" else None,
+                sweep_anchors=self.sweep_anchors,
             )
 
         all_metrics = self._run_iterations(

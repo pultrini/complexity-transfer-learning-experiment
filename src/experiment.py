@@ -76,6 +76,7 @@ class Experiment:
                 }
             )
 
+            results.update(self._transfer_metadata())
             self._save_results(results)
             mlflow.log_artifact(self.config.output_file)
             self._log_model_and_checkpoints(model)
@@ -128,7 +129,9 @@ class Experiment:
             A dict with the per-epoch history of ``accuracy``, ``loss``, and
             ``complexity``.
         """
-        history: dict[str, list[float]] = {"accuracy": [], "loss": [], "complexity": []}
+        history: dict[str, list[float]] = {
+            "accuracy": [], "loss": [], "complexity": [], "entropy": [], "disequilibrium": [],
+        }
         best_loss = math.inf
         best_complexity = -math.inf
         checkpoint_prefix = self.config.dataset_name
@@ -136,8 +139,10 @@ class Experiment:
         use_windows = (
             self.config.complexity_window_fractions is not None and len(self.config.complexity_window_fractions) > 0
         )
+        use_sweep = bool(self.config.sweep_offsets)
+        keep_all_epochs = use_windows or use_sweep
         temp_dir = Path()
-        if use_windows:
+        if keep_all_epochs:
             run_id = mlflow.active_run().info.run_id if mlflow.active_run() else "local"
             temp_dir = Path(self.config.models_dir) / f"temp_{checkpoint_prefix}_{run_id}"
             temp_dir.mkdir(parents=True, exist_ok=True)
@@ -169,6 +174,8 @@ class Experiment:
             history["accuracy"].append(val_acc)
             history["loss"].append(val_loss)
             history["complexity"].append(complexity)
+            history["entropy"].append(train_metrics["entropy"])
+            history["disequilibrium"].append(train_metrics["disequilibrium"])
 
             self._log_epoch_metrics(epoch, val_acc, val_loss, train_metrics)
 
@@ -176,19 +183,29 @@ class Experiment:
                 self._save_checkpoint(trainer.model, f"{checkpoint_prefix}_min_loss.pth")
                 best_loss = val_loss
 
-            if use_windows:
+            if keep_all_epochs:
                 torch.save(trainer.model.state_dict(), temp_dir / f"epoch_{epoch}.pth")
 
-            else:  # noqa: PLR5501
+            if not use_windows and complexity > best_complexity:
+                self._save_checkpoint(trainer.model, f"{checkpoint_prefix}_max_complexity.pth")
+                best_complexity = complexity
 
-                if complexity > best_complexity:
-                    self._save_checkpoint(trainer.model, f"{checkpoint_prefix}_max_complexity.pth")
-                    best_complexity = complexity
-
-        if use_windows and temp_dir:
+        if use_windows:
             self._process_complexity_windows(history, temp_dir, checkpoint_prefix)
+        if use_sweep:
+            self._process_neighborhood_sweep(history, temp_dir, checkpoint_prefix)
+        if keep_all_epochs:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
+        # Always describe the anchor checkpoints just written, so a sidecar left
+        # over from an earlier run can never be attached to a newer checkpoint.
+        models_dir = Path(self.config.models_dir)
+        for anchor in ("max_complexity", "min_loss"):
+            t_star = self.anchor_epoch(history, anchor)
+            self._write_sidecar(
+                models_dir / f"{checkpoint_prefix}_{anchor}.pth", history, anchor, 0, t_star, t_star
+            )
+        self._save_history(history)
         return history
 
     def _log_epoch_metrics(
@@ -251,6 +268,122 @@ class Experiment:
                 dst_ckpt = Path(self.config.models_dir) / f"{checkpoint_prefix}_max_complexity_{frac_label}.pth"
 
             shutil.copy2(src_ckpt, dst_ckpt)
+
+    @staticmethod
+    def anchor_epoch(history: dict[str, list[float]], anchor: str) -> int:
+        """1-indexed epoch of the anchor checkpoint (same rule as the main workflow)."""
+        if anchor == "max_complexity":
+            return int(np.argmax(history["complexity"])) + 1
+        if anchor == "min_loss":
+            return int(np.argmin(history["loss"])) + 1
+        raise ValueError(f"Unknown sweep anchor: {anchor!r}")
+
+    @staticmethod
+    def sweep_checkpoint_name(prefix: str, anchor: str, offset: int) -> str:
+        sign = "p" if offset > 0 else "m"
+        return f"{prefix}_{anchor}_off{sign}{abs(offset)}.pth"
+
+    def _process_neighborhood_sweep(
+        self, history: dict[str, list[float]], temp_dir: Path, checkpoint_prefix: str
+    ) -> None:
+        """Keep only the checkpoints around each anchor epoch (t* + offset).
+
+        Each requested offset fills one slot. If t* + offset falls outside
+        [1, T] (e.g. t* = 1, offset -2), the slot is filled with the nearest
+        unused valid epoch to t* instead (``shifted=True``), so the neighborhood
+        always contains distinct epochs and no fine-tuning is spent on duplicates.
+        The sidecar stores the epoch actually transferred and its true offset
+        (``source_epoch - anchor_epoch``); analyses must use those, not the slot.
+        """
+        models_dir = Path(self.config.models_dir)
+        num_epochs = len(history["complexity"])
+        for anchor in self.config.sweep_anchors:
+            t_star = self.anchor_epoch(history, anchor)
+            for slot, epoch in self.neighborhood_epochs(
+                t_star, self.config.sweep_offsets or [], num_epochs
+            ):
+                dst = models_dir / self.sweep_checkpoint_name(checkpoint_prefix, anchor, slot)
+                shutil.copy2(temp_dir / f"epoch_{epoch}.pth", dst)
+                self._write_sidecar(dst, history, anchor, slot, t_star, epoch)
+
+    @staticmethod
+    def neighborhood_epochs(
+        t_star: int, offsets: list[int], num_epochs: int
+    ) -> list[tuple[int, int]]:
+        """Map each requested offset (slot) to a distinct source epoch != t*."""
+        used = {t_star}
+        assigned: dict[int, int] = {}
+        for offset in offsets:
+            epoch = t_star + offset
+            if 1 <= epoch <= num_epochs and epoch not in used:
+                assigned[offset] = epoch
+                used.add(epoch)
+        candidates = sorted(
+            (e for e in range(1, num_epochs + 1) if e not in used),
+            key=lambda e: (abs(e - t_star), e),
+        )
+        for offset in sorted(set(offsets) - set(assigned), key=abs):
+            if candidates:
+                epoch = candidates.pop(0)
+            else:  # fewer epochs than slots: reuse the closest valid epoch
+                epoch = min(max(t_star + offset, 1), num_epochs)
+            assigned[offset] = epoch
+        return [(offset, assigned[offset]) for offset in offsets]
+
+    def _write_sidecar(
+        self,
+        checkpoint_path: Path,
+        history: dict[str, list[float]],
+        anchor: str,
+        offset: int,
+        anchor_epoch: int,
+        epoch: int,
+    ) -> None:
+        index = epoch - 1
+        sidecar = {
+            "anchor": anchor,
+            "slot": offset,
+            "offset": epoch - anchor_epoch,
+            "anchor_epoch": anchor_epoch,
+            "source_epoch": epoch,
+            "shifted": epoch != anchor_epoch + offset,
+            "source_complexity": float(history["complexity"][index]),
+            "source_entropy": float(history["entropy"][index]),
+            "source_disequilibrium": float(history["disequilibrium"][index]),
+            "source_val_loss": float(history["loss"][index]),
+            "source_val_accuracy": float(history["accuracy"][index]),
+        }
+        sidecar_path = checkpoint_path.with_suffix(".json")
+        sidecar_path.parent.mkdir(parents=True, exist_ok=True)
+        sidecar_path.write_text(json.dumps(sidecar, indent=2), encoding="utf-8")
+        if mlflow.active_run():
+            mlflow.log_artifact(str(sidecar_path), artifact_path="sweep")
+
+    def _transfer_metadata(self) -> dict:
+        """For target steps: copy the source-checkpoint sidecar into the results."""
+        if not self.config.checkpoint_path:
+            return {}
+        sidecar_path = Path(self.config.checkpoint_path).with_suffix(".json")
+        if not sidecar_path.exists():
+            return {}
+        sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+        return {f"transfer_{key}": value for key, value in sidecar.items()}
+
+    def _save_history(self, history: dict[str, list[float]]) -> None:
+        """Persist the per-epoch history (one file per run, not overwritten)."""
+        output_path = Path(self.config.output_file)
+        run_label = self.config.mlflow_run_name or "run"
+        history_path = output_path.with_name(f"{output_path.stem}_{run_label}_history.json")
+        history_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "epochs": list(range(1, len(history["loss"]) + 1)),
+            "val_accuracy": history["accuracy"],
+            "val_loss": history["loss"],
+            "complexity": history["complexity"],
+            "entropy": history["entropy"],
+            "disequilibrium": history["disequilibrium"],
+        }
+        history_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     def _summarize_results(self, history: dict[str, list[float]]) -> dict[str, float]:
         """Reduce the per-epoch history into final best-value metrics.
