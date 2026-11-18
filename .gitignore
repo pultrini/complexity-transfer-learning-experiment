@@ -212,7 +212,7 @@ models/*
 results/*
 mlflow.db
 
-
+data/*
 cli/
 go.mod
 go.sum
