@@ -84,6 +84,10 @@ class Experiment:
             print(f"Run results saved to: {self.config.output_file}")
             return results
 
+    def close(self) -> None:
+        """Release DataLoader workers held by this experiment."""
+        self.dataset_manager.close()
+
     def _log_run_params(self) -> None:
         """Log static run parameters to MLflow (dataset, strategy, workflow metadata)."""
         mlflow.log_params(

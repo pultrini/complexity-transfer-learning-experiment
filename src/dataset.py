@@ -305,3 +305,29 @@ class DatasetManager:
     def test_loader(self) -> DataLoader:
         self._ensure_dataloaders()
         return self._test_loader
+
+    def close(self) -> None:
+        """Shut down persistent DataLoader workers and drop the loaders.
+
+        With ``persistent_workers=True`` each loader keeps its worker processes
+        (and their pipes / shared-memory file descriptors) alive until the
+        object is garbage-collected. Many runs in one process (e.g. the
+        neighborhood sweep) otherwise accumulate them until the OS raises
+        "Too many open files".
+        """
+        loaders = (
+            self._train_loader,
+            self._train_with_validation_loader,
+            self._val_loader,
+            self._test_loader,
+        )
+        for loader in loaders:
+            iterator = getattr(loader, "_iterator", None) if loader is not None else None
+            if iterator is not None and hasattr(iterator, "_shutdown_workers"):
+                iterator._shutdown_workers()
+            if loader is not None:
+                loader._iterator = None
+        self._train_loader = None
+        self._train_with_validation_loader = None
+        self._val_loader = None
+        self._test_loader = None

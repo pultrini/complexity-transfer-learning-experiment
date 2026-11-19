@@ -1,5 +1,7 @@
 import argparse
 
+import torch.multiprocessing
+
 from config.lm_workflow import LM_WORKFLOWS
 from config.workflows import WORKFLOWS
 from src.lm_orchestrator import LMOrchestrator
@@ -160,6 +162,10 @@ def run_language(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
+    # Share tensors between DataLoader workers through files in /dev/shm instead
+    # of one file descriptor per tensor, which exhausts the descriptor limit in
+    # long multi-run processes ("Too many open files").
+    torch.multiprocessing.set_sharing_strategy("file_system")
     parser = argparse.ArgumentParser(
         description="Run transfer learning experiments (vision or language models)."
     )

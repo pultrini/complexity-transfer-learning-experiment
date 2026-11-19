@@ -8,6 +8,11 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
+# Raise the open-file limit for this shell (up to the hard limit) to avoid
+# "Too many open files" with 8 persistent DataLoader workers per loader.
+ulimit -n "$(ulimit -Hn)" 2>/dev/null || ulimit -n 65535 2>/dev/null || true
+echo "open-file limit: $(ulimit -n)"
+
 ITERATIONS="${ITERATIONS:-5}"
 DEVICE="${DEVICE:-cuda:0}"
 OPTIMIZER="${OPTIMIZER:-adam}"          # "adam" | "adamw" | "sgd"

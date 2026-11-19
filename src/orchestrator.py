@@ -238,7 +238,11 @@ class Orchestrator:
 
             for step in steps:
                 config = build_config(step, iteration)
-                Experiment(config).run()
+                experiment = Experiment(config)
+                try:
+                    experiment.run()
+                finally:
+                    experiment.close()
                 self._release_gpu_memory()
 
             metrics_per_step = {step.name: self._read_metrics(step.output_file) for step in steps}
